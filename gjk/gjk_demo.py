@@ -1,6 +1,6 @@
 import pygame
 import numpy as np
-from gjk_algo import GJK
+from gjk_algo import GJK, Circle
 
 
 def Cube():
@@ -51,13 +51,14 @@ def c2s(x, y=None):
     return (int(sx), int(sy))
 
 
-polygon1 = [(1,4), (5,3), (10, 5), (11,9), (5,9), (2,8)]
+polygon1 = Circle((12, 12), 2) #[(1,4), (5,3), (10, 5), (11,9), (5,9), (2,8)]
 polygon2 = [(10, 10), (12, 6), (16, 8), (15, 11)]
 
-minkowsky_diff = []
-for p1 in polygon1:
-    for p2 in polygon2:
-        minkowsky_diff.append((p1[0]-p2[0], p1[1]-p2[1]))
+## don't calculate minkowsky distance of a circle
+# minkowsky_diff = []
+# for p1 in polygon1:
+#     for p2 in polygon2:
+#         minkowsky_diff.append((p1[0]-p2[0], p1[1]-p2[1]))
 
 algo = GJK(polygon1, polygon2, init_d=(-1, 0))
 status = algo.step()
@@ -66,6 +67,11 @@ print "init step:", status
 def drawLines(screen, color, close, c_shape):
     pygame.draw.lines(screen, color, True, [c2s(p) for p in c_shape])
 
+def drawShape(screen, color, shape):
+    if isinstance(shape, Circle):
+        pygame.draw.circle(screen, color, c2s(shape.center), int(shape.radius * grid_size), 1)
+    else:
+        drawLines(screen, color, True, shape)
 
 while not done:
     clock.tick(24)
@@ -83,12 +89,12 @@ while not done:
 
     screen.fill(WHITE)
 
-    origin_rect = [screen_width/2-1, screen_height/2-1, 2, 2]
+    origin_rect = [screen_width/2-2, screen_height/2-2, 4, 4]
     pygame.draw.rect(screen, BLACK, origin_rect)
-    pygame.draw.lines(screen, PURPLE,  True, [c2s(p) for p in polygon1])
-    pygame.draw.lines(screen, BLUE, True, [c2s(p) for p in polygon2])
-    for p in minkowsky_diff:
-        pygame.draw.circle(screen, GREEN, c2s(p), 2)
+    drawShape(screen, PURPLE, polygon1)
+    drawShape(screen, BLUE, polygon2)
+    # for p in minkowsky_diff:
+    #     pygame.draw.circle(screen, GREEN, c2s(p), 2)
 
 
     # draw old simplex

@@ -26,7 +26,24 @@ def tripleCross(a, b, c):
     return np.array([crs[0], crs[1]])
 
 
+class Sphere(object):
+    def __init__(self, center, radius):
+        self.center = np.array(center)
+        self.radius = radius
+
+class Circle(object):
+    def __init__(self, center, radius):
+        self.center = np.array(center)
+        self.radius = radius
+
+
 def getFarthestPointInDirection(shape, d):
+    d_norm = d / np.linalg.norm(d)
+    if isinstance(shape, Sphere):
+        return shape.center + d_norm * shape.radius
+    if isinstance(shape, Circle):
+        return shape.center + d_norm * shape.radius
+
     maxP = None
     maxVal = None
     for p in shape:
