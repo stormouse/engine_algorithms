@@ -1,9 +1,72 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
+
+public class NavmeshArea
+{
+    public List<Vector3> contour;
+    public List<List<Vector3>> holes;
+    public NavmeshArea() { holes = new List<List<Vector3>>(); }
+}
+
+
 public class NavigationVolume : MonoBehaviour {
+
+
+    class VertexNode
+    {
+        static int latestId = 0;
+        public int id;
+        public Vector3 v;
+        public VertexNode next;
+        public VertexNode prev;
+        public VertexNode(Vector3 _v)
+        {
+            id = latestId++;
+            v = _v;
+            next = prev = null;
+        }
+
+        public static void ResetStaticId()
+        {
+            latestId = 0;
+        }
+    }
+
+    class VertexWANode
+    {
+        public static int latestId = 0;
+
+        public enum NodeType { Endpoint, Intersection, };
+        public enum NodeDirection { In, Out, };
+
+        public int Id;
+        public Vector3 Vertex;
+        public NodeType Type;
+        public VertexWANode ClipperPrev;
+        public VertexWANode ClipperNext;
+        public VertexWANode PolygonPrev;
+        public VertexWANode PolygonNext;
+
+        // we hold the polygon edges and the intersections belongs to the clipper
+        public VertexWANode Next { get { return ClipperNext; } set { ClipperNext = value; } }
+        public VertexWANode Prev { get { return ClipperPrev; } set { ClipperPrev = value; } }
+
+        // shouldn't use when Type == Endpoint
+        public NodeDirection Direction;
+
+        public VertexWANode(Vector3 v, NodeType type)
+        {
+            Id = latestId++;
+            Vertex = v;
+            Type = type;
+            ClipperPrev = ClipperNext = PolygonPrev = PolygonNext = null;
+        }
+    }
+
 
     public float gridSize;
     public Bounds bounds;
@@ -14,8 +77,9 @@ public class NavigationVolume : MonoBehaviour {
     private int[,] data;
 
     private List<Vector3> m_contour = new List<Vector3>();
-    private List<List<Vector3>> holes = new List<List<Vector3>>();
+    private List<List<Vector3>> m_holes = new List<List<Vector3>>();
     private List<List<Vector3>> walkables = new List<List<Vector3>>();
+    public List<NavmeshArea> areas = null;
 
     private void Start()
     {
@@ -187,6 +251,143 @@ public class NavigationVolume : MonoBehaviour {
         return anchor;
     }
 
+    public float targetRadius = 0.5f;
+
+    public List<NavmeshArea> GenerateNavmeshAreas()
+    {
+        List<NavmeshArea> rawAreas = FindAreas();
+        List<NavmeshArea> realAreas = new List<NavmeshArea>();
+        foreach(var a in rawAreas)
+        {
+            realAreas.AddRange(PurifyArea(a));
+        }
+
+        return realAreas;
+    }
+
+    private List<NavmeshArea> PurifyArea(NavmeshArea area)
+    {
+        List<NavmeshArea> result = new List<NavmeshArea>();
+        List<List<Vector3>> contours = OffsetByRadius(area.contour, targetRadius, Vector3.up);
+        List<List<Vector3>> holes = new List<List<Vector3>>();
+        foreach (var h in area.holes)
+            holes.AddRange(OffsetByRadius(h, targetRadius, Vector3.down));
+
+        MergePolygons(holes);
+
+        bool[] shouldRemove = new bool[holes.Count];
+        
+        for (int i = 0; i < contours.Count; i++)
+        {
+            for (int j = 0; j < holes.Count; j++)
+            {
+                List<List<Vector3>> tmp;
+                if (PolygonSubtract(contours[i], holes[j], out tmp))
+                {
+                    contours.RemoveAt(i--);
+                    foreach (var tmpList in tmp) contours.Add(tmpList);
+                    shouldRemove[j] = true; // the hole cut through the contour, not a hole anymore
+                } // else nothing changed
+            }
+        }
+        
+        foreach (var c in contours)
+        {
+            NavmeshArea a = new NavmeshArea();
+            a.contour = c;
+            for (int i = 0; i < holes.Count; i++)
+            {
+                if (!shouldRemove[i] && GetInsideness(holes[i][0], c))
+                {
+                    a.holes.Add(holes[i]);
+                }
+            }
+            result.Add(a);
+        }
+
+        return result;
+    }
+
+
+    public List<NavmeshArea> FindAreas()
+    {
+        List<NavmeshArea> result = new List<NavmeshArea>();
+        Dictionary<int, NavmeshArea> dict = new Dictionary<int, NavmeshArea>();
+        NavmeshArea extArea = null;
+        int[,] visited = new int[numRows, numCols]; // 0 by default
+        int[] delta = { 1, 0, 0, -1, -1, 0, 0, 1 };
+        for (int i = 0; i < numRows; i++)
+        {
+            for (int j = 0; j < numCols; j++)
+            {
+                if (visited[i, j] == 0)
+                {
+                    int areaId = data[i, j] == 1 ? result.Count + 1 : -1;
+                    visited[i, j] = areaId;
+                    Queue<int> q = new Queue<int>();
+                    q.Enqueue(i * numCols + j);
+                    while (q.Count > 0)
+                    {
+                        int front = q.Dequeue();
+                        int x = front % numCols, z = front / numCols;
+                        for (int k = 0; k < 4; k++)
+                        {
+                            int nx = x + delta[k * 2 + 0],
+                                nz = z + delta[k * 2 + 1];
+                            if (nx < 0 || nx >= numCols || nz < 0 || nz >= numRows) continue;
+                            if (visited[nz, nx] != 0) continue;
+                            if (data[nz, nx] == data[i, j])
+                            {
+                                q.Enqueue(nz * numCols + nx);
+                                visited[nz, nx] = areaId;
+                            }
+                        }
+                    }
+                    if (data[i, j] == 1)
+                    {
+                        NavmeshArea newArea = new NavmeshArea();
+                        newArea.contour = SimplifyContour(ContourWalk(j, i, 1));
+                        result.Add(newArea);
+                        extArea = newArea;
+                    }
+                    else if (extArea != null) extArea.holes.Add(SimplifyContour(ContourWalk(j, i, 0)));
+                }
+                else if(visited[i, j] > 0)
+                {
+                    extArea = result[visited[i, j] - 1];
+                }
+            }
+        }
+        Debug.Log(string.Format("# Navmesh areas: {0}", result.Count));
+        return result;
+    }
+
+
+
+    private void MergePolygons(List<List<Vector3>> polygons)
+    {
+        int n = polygons.Count;
+        int i = n - 1;
+        while(i > 0)
+        {
+            int innerCount = 0;
+            for(int j = i - 1; j >= 0; j--)
+            {
+                innerCount++;
+                if (innerCount > 100) throw new Exception("innerCount > 100");
+                List<Vector3> newPolygon;
+                if(PolygonUnion(polygons[j], polygons[i], out newPolygon))
+                {
+                    polygons[i] = newPolygon;
+                    polygons.RemoveAt(j);
+                    break;
+                }
+            }
+            i--;
+            if (i < 0) throw new Exception("i < 0");
+        }
+    }
+
     public void FindHolesAndWalkables()
     {
         bool[,] visited = new bool[numRows, numCols]; // false by default
@@ -216,13 +417,13 @@ public class NavigationVolume : MonoBehaviour {
                             }
                         }
                     }
-                    if (data[i, j] == 0) holes.Add(SimplifyContour(ContourWalk(j, i, 0)));
+                    if (data[i, j] == 0) m_holes.Add(SimplifyContour(ContourWalk(j, i, 0)));
                     else if (data[i, j] == 1) walkables.Add(SimplifyContour(ContourWalk(j, i, 1)));
                 }
             }
         }
-        Debug.Log(string.Format("#Areas: {0}, #Holes: {1}", walkables.Count, holes.Count));
-        holes.Remove(holes[0]); // remove the exterior space
+        Debug.Log(string.Format("#Areas: {0}, #Holes: {1}", walkables.Count, m_holes.Count));
+        m_holes.Remove(m_holes[0]); // remove the exterior space
     }
 
     public void ShrinkContour(float radius = 0.5f)
@@ -235,38 +436,20 @@ public class NavigationVolume : MonoBehaviour {
         walkables = shrinkedWalkables;
 
         List<List<Vector3>> expandedHoles = new List<List<Vector3>>();
-        foreach(var h in holes)
+        foreach(var h in m_holes)
         {
             expandedHoles.AddRange(OffsetByRadius(h, radius, Vector3.down));
         }
-        holes = expandedHoles;
+        m_holes = expandedHoles;
     }
 
     List<List<Vector3>> clippingResults = new List<List<Vector3>>();
     public void TestClipWalkableArea()
     {
-        clippingResults = PolygonSubtract(walkables[0], holes[0]);
+        bool changed = PolygonSubtract(walkables[0], m_holes[0], out clippingResults);
     }
 
-    class VertexNode
-    {
-        static int latestId = 0;
-        public int id;
-        public Vector3 v;
-        public VertexNode next;
-        public VertexNode prev;
-        public VertexNode(Vector3 _v)
-        {
-            id = latestId++;
-            v = _v;
-            next = prev = null;
-        }
 
-        public static void ResetStaticId()
-        {
-            latestId = 0;
-        }
-    }
 
     List<Vector3> debugIntersections = new List<Vector3>();
     
@@ -305,21 +488,11 @@ public class NavigationVolume : MonoBehaviour {
         List<List<Vector3>> polygons = new List<List<Vector3>>();
         Queue<VertexNode> queue = new Queue<VertexNode>();
         queue.Enqueue(head);
+        
         while (queue.Count > 0)
         {
             head = queue.Dequeue();
             var p = head;
-
-            string debugOutput = "";
-            float a = 0.0f;
-            while (p.next != null)
-            {
-                a += (p.next.v.x - p.v.x) * (p.next.v.z + p.v.z);
-                debugOutput += p.id.ToString() + " ";
-                p = p.next;
-            }
-
-            p = head;
             while (p.next != null)
             {
                 Vector3 v1 = p.v, v2 = p.next.v;  // current segment
@@ -401,36 +574,7 @@ public class NavigationVolume : MonoBehaviour {
         return Mathf.Min(v0.z, v1.z) < z && z <= Mathf.Max(v0.z, v1.z);
     }
 
-    class VertexWANode
-    {
-        public static int latestId = 0;
 
-        public enum NodeType { Endpoint, Intersection, };
-        public enum NodeDirection { In, Out, };
-
-        public int Id;
-        public Vector3 Vertex;
-        public NodeType Type;
-        public VertexWANode ClipperPrev;
-        public VertexWANode ClipperNext;
-        public VertexWANode PolygonPrev;
-        public VertexWANode PolygonNext;
-        
-        // we hold the polygon edges and the intersections belongs to the clipper
-        public VertexWANode Next { get { return ClipperNext; } set { ClipperNext = value; } }
-        public VertexWANode Prev { get { return ClipperPrev; } set { ClipperPrev = value; } }
-
-        // shouldn't use when Type == Endpoint
-        public NodeDirection Direction;
-        
-        public VertexWANode(Vector3 v, NodeType type)
-        {
-            Id = latestId++;
-            Vertex = v;
-            Type = type;
-            ClipperPrev = ClipperNext = PolygonPrev = PolygonNext = null;
-        }
-    }
 
 
     private bool GetInsideness(Vector3 point, List<Vector3> v)
@@ -448,9 +592,86 @@ public class NavigationVolume : MonoBehaviour {
     }
 
 
-    private List<List<Vector3>> PolygonSubtract(List<Vector3> contour, List<Vector3> clipper)
+
+    private List<VertexWANode> GetWAIntersections(VertexWANode contourHead, VertexWANode clipperHead, bool headInside)
     {
-        List<List<Vector3>> result = new List<List<Vector3>>();
+        List<VertexWANode> intersections = new List<VertexWANode>();
+        var p = contourHead;
+        do
+        {
+            var pnext = p.Next;
+            {
+                var q = clipperHead;
+                do
+                {
+                    var qnext = q.Next;
+                    Vector3 t;
+                    if (SegmentIntersection(p.Vertex, pnext.Vertex, q.Vertex, qnext.Vertex, out t))
+                    {
+                        if (OnSegment(ref p.Vertex, ref t, ref pnext.Vertex) && OnSegment(ref q.Vertex, ref t, ref qnext.Vertex))
+                        {
+                            t.y = 1;
+                            VertexWANode inter = new VertexWANode(t, VertexWANode.NodeType.Intersection);
+                            inter.PolygonPrev = p;
+                            inter.PolygonNext = p.Next;     // p.Next !== pnext, if there're multiple insertions
+                            inter.ClipperPrev = q;
+                            inter.ClipperNext = q.Next;
+
+                            p.Next.Prev = inter;
+                            p.Next = inter;
+                            q.Next.Prev = inter;
+                            q.Next = inter;
+                            intersections.Add(inter);       // direction is determined later
+                        }
+                    }
+                    q = qnext;
+                } while (q != clipperHead);  // end of clipper do-while
+            }
+            p = pnext;
+        } while (p != contourHead); // end of contour do-while
+
+        var dir = headInside ? VertexWANode.NodeDirection.Out : VertexWANode.NodeDirection.In;
+        p = contourHead;
+        do
+        {
+            if (p.Type == VertexWANode.NodeType.Intersection)
+            {
+                p.Direction = dir;
+                dir = (dir == VertexWANode.NodeDirection.In) ? VertexWANode.NodeDirection.Out : VertexWANode.NodeDirection.In;
+                p = p.PolygonNext;
+            }
+            else p = p.Next;
+        } while (p != contourHead);
+        
+        return intersections;
+    }
+
+
+    private VertexWANode MakeLinkedLoop(List<Vector3> polygon, bool reverse = false)
+    {
+        int n = polygon.Count;
+        int d = reverse ? -1 : 1;
+        int s = reverse ? n-1 : 0;
+        int t = reverse ? -1 : n;
+
+        VertexWANode head = new VertexWANode(polygon[s], VertexWANode.NodeType.Endpoint);
+        VertexWANode tail = head;
+        for(int i = s + d; i != t; i += d)
+        {
+            int j = (i + n) % n;
+            tail.Next = new VertexWANode(polygon[j], VertexWANode.NodeType.Endpoint);
+            tail.Next.Prev = tail;
+            tail = tail.Next;
+        }
+        tail.Next = head;
+
+        return head;
+    }
+
+
+    private bool PolygonSubtract(List<Vector3> contour, List<Vector3> clipper, out List<List<Vector3>> result)
+    {
+        result = new List<List<Vector3>>();
 
         bool clipperInsideContour = true;
 
@@ -472,7 +693,7 @@ public class NavigationVolume : MonoBehaviour {
             List<Vector3> tmp = new List<Vector3>(); // copy contour
             tmp.AddRange(contour);
             result.Add(tmp);
-            return result;
+            return false; // not changed
         }
         
         bool contourInsideClipper = true;
@@ -492,46 +713,11 @@ public class NavigationVolume : MonoBehaviour {
         }
         ctrTail.Next = ctrHead; // form a loop
 
-        if (contourInsideClipper) return result; // return empty list
+        if (contourInsideClipper) return true; // return empty list
 
-        List<VertexWANode> intersections = new List<VertexWANode>();
-        
-        var p = ctrHead;
-        do
-        {
-            var pnext = p.Next;
-            if(insideClipper[p.Id] != insideClipper[pnext.Id])
-            {
-                var q = clpHead;
-                do
-                {
-                    var qnext = q.Next;
-                    Vector3 t;
-                    if(SegmentIntersection(p.Vertex, pnext.Vertex, q.Vertex, qnext.Vertex, out t))
-                    {
-                        if(OnSegment(ref p.Vertex, ref t, ref pnext.Vertex) && OnSegment(ref q.Vertex, ref t, ref qnext.Vertex))
-                        {
-                            t.y = 1;
-                            VertexWANode inter = new VertexWANode(t, VertexWANode.NodeType.Intersection);
-                            inter.PolygonPrev = p;
-                            inter.PolygonNext = pnext;
-                            inter.ClipperPrev = q;
-                            inter.ClipperNext = qnext;
-                            inter.Direction = (insideClipper[p.Id] == false) ? VertexWANode.NodeDirection.In : VertexWANode.NodeDirection.Out;
-
-                            p.Next = inter;
-                            pnext.Prev = inter;
-                            q.Next = inter;
-                            qnext.Prev = inter;
-                            intersections.Add(inter);
-                        }
-                    }
-                    q = qnext;
-                } while (q != clpHead);  // end of clipper do-while
-            }
-            p = pnext;
-        }
-        while (p != ctrHead); // end of contour do-while
+        var intersections = GetWAIntersections(ctrHead, clpHead, insideClipper[ctrHead.Id]);
+        if (intersections.Count == 0) return false;
+        if (intersections.Count > 8) return false; // unlikely, should be collinear boundaries
 
         // start from outward intersections to get exterior polygons (contour - hole)
         HashSet<int> visited = new HashSet<int>();
@@ -544,7 +730,7 @@ public class NavigationVolume : MonoBehaviour {
                 do
                 {
                     visited.Add(q.Id);
-                    polygon.Add(q.Vertex);
+                    polygon.Add(new Vector3(q.Vertex.x, q.Vertex.y, q.Vertex.z)); // copy
                     if (q.Type == VertexWANode.NodeType.Intersection)
                     {
                         if (q.Direction == VertexWANode.NodeDirection.Out)
@@ -558,9 +744,42 @@ public class NavigationVolume : MonoBehaviour {
             }
         }
 
-        return result;
+        return true;
     }
 
+
+    private bool PolygonUnion(List<Vector3> ct1, List<Vector3> ct2, out List<Vector3> result)
+    {
+        result = new List<Vector3>();
+
+        VertexWANode head1 = MakeLinkedLoop(ct1);
+        VertexWANode head2 = MakeLinkedLoop(ct2);
+
+        var intersections = GetWAIntersections(head1, head2, GetInsideness(head1.Vertex, ct2));
+        if (intersections.Count == 0) return false;
+        
+        foreach(var it in intersections)
+        {
+            if(it.Direction == VertexWANode.NodeDirection.Out)
+            {
+                var p = it;
+                do
+                {
+                    result.Add(p.Vertex);
+                    if (p.Type == VertexWANode.NodeType.Intersection)
+                    {
+                        if (p.Direction == VertexWANode.NodeDirection.Out)
+                            p = p.PolygonNext;
+                        else
+                            p = p.ClipperNext;
+                    }
+                    else p = p.Next;
+                } while (p != it);
+                break; // only one union polygon can be made
+            }
+        }
+        return true;
+    }
 
     private bool SegmentIntersection(Vector3 v1, Vector3 v2, Vector3 u1, Vector3 u2, out Vector3 intersection)
     {
@@ -598,49 +817,73 @@ public class NavigationVolume : MonoBehaviour {
         //    }
         //}
 
-        // Draw walkable contour
-        Gizmos.color = Color.red;
-        foreach (var contour in walkables)
+        //// Draw walkable contour
+        //Gizmos.color = Color.red;
+        //foreach (var contour in walkables)
+        //{
+        //    if (contour.Count > 0)
+        //    {
+        //        for (int i = 0; i < contour.Count - 1; i++)
+        //        {
+        //            Gizmos.DrawLine(contour[i], contour[i + 1]);
+        //        }
+        //        Gizmos.DrawLine(contour[contour.Count - 1], contour[0]);
+        //    }
+        //}
+
+
+        //Gizmos.color = Color.green;
+        //foreach(var t in debugIntersections)
+        //{
+        //    Gizmos.DrawWireSphere(t, 0.1f);
+        //}
+
+
+        //// Draw holes
+        //Gizmos.color = Color.magenta;
+        //foreach(var hole in holes)
+        //{
+        //    for (int i = 0; i < hole.Count - 1; i++)
+        //    {
+        //        Gizmos.DrawLine(hole[i], hole[i + 1]);
+        //    }
+        //    Gizmos.DrawLine(hole[hole.Count - 1], hole[0]);
+        //}
+
+
+        //// Draw test polygon subtraction
+        //Gizmos.color = new Color(0.5f, 0.8f, 0.8f);
+        //foreach(var p in clippingResults)
+        //{
+        //    for(int i = 0; i < p.Count - 1; i++)
+        //    {
+        //        Gizmos.DrawLine(p[i], p[i + 1]);
+        //    }
+        //    Gizmos.DrawLine(p[p.Count - 1], p[0]);
+        //}
+
+
+        if(areas != null)
         {
-            if (contour.Count > 0)
+            foreach(var a in areas)
             {
-                for (int i = 0; i < contour.Count - 1; i++)
+                Gizmos.color = new Color(0.5f, 0.8f, 0.8f);
+                for (int i = 0; i < a.contour.Count - 1; i++)
                 {
-                    Gizmos.DrawLine(contour[i], contour[i + 1]);
+                    Gizmos.DrawLine(a.contour[i], a.contour[i + 1]);
                 }
-                Gizmos.DrawLine(contour[contour.Count - 1], contour[0]);
+                Gizmos.DrawLine(a.contour[a.contour.Count - 1], a.contour[0]);
+
+                Gizmos.color = Color.magenta;
+                foreach (var hole in a.holes)
+                {
+                    for (int i = 0; i < hole.Count - 1; i++)
+                    {
+                        Gizmos.DrawLine(hole[i], hole[i + 1]);
+                    }
+                    Gizmos.DrawLine(hole[hole.Count - 1], hole[0]);
+                }
             }
-        }
-
-
-        Gizmos.color = Color.green;
-        foreach(var t in debugIntersections)
-        {
-            Gizmos.DrawWireSphere(t, 0.1f);
-        }
-
-
-        // Draw holes
-        Gizmos.color = Color.magenta;
-        foreach(var hole in holes)
-        {
-            for (int i = 0; i < hole.Count - 1; i++)
-            {
-                Gizmos.DrawLine(hole[i], hole[i + 1]);
-            }
-            Gizmos.DrawLine(hole[hole.Count - 1], hole[0]);
-        }
-
-
-        // Draw test polygon subtraction
-        Gizmos.color = new Color(0.5f, 0.8f, 0.8f);
-        foreach(var p in clippingResults)
-        {
-            for(int i = 0; i < p.Count - 1; i++)
-            {
-                Gizmos.DrawLine(p[i], p[i + 1]);
-            }
-            Gizmos.DrawLine(p[p.Count - 1], p[0]);
         }
     }
 }

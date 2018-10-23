@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 public class MeshCollection : MonoBehaviour {
@@ -31,6 +32,14 @@ public class MeshCollection : MonoBehaviour {
                 }
             }
         }
+
+        if(GUILayout.Button("Generate Navmesh Areas"))
+        {
+            var areas = FindObjectOfType<NavigationVolume>().GenerateNavmeshAreas();
+            FindObjectOfType<NavigationVolume>().areas = areas;
+            Debug.Log(string.Format("#areas: {0}", areas.Count));
+        }
+
 
         if (GUILayout.Button("Generate Simplified Contour"))
         {
