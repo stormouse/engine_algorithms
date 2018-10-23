@@ -287,6 +287,7 @@ public class NavigationVolume : MonoBehaviour {
                     contours.RemoveAt(i--);
                     foreach (var tmpList in tmp) contours.Add(tmpList);
                     shouldRemove[j] = true; // the hole cut through the contour, not a hole anymore
+                    if (i < 0) break;
                 } // else nothing changed
             }
         }
@@ -798,11 +799,16 @@ public class NavigationVolume : MonoBehaviour {
         }
     }
 
+
+    private void OnDrawGizmosSelected()
+    {
+        // Draw volume
+        Gizmos.color = Color.green;
+        Gizmos.DrawWireCube(bounds.center, bounds.extents * 2);
+    }
+
     private void OnDrawGizmos()
     {
-        //// Draw volume
-        //Gizmos.color = Color.green;
-        //Gizmos.DrawWireCube(bounds.center, bounds.extents * 2);
 
         //// Draw walkable grids
         //Gizmos.color = Color.yellow;
