@@ -40,6 +40,7 @@ public class MeshCollection : MonoBehaviour {
             Debug.Log(string.Format("#areas: {0}", areas.Count));
         }
 
+        /*
 
         if (GUILayout.Button("Generate Simplified Contour"))
         {
@@ -55,6 +56,11 @@ public class MeshCollection : MonoBehaviour {
         if (GUILayout.Button("Clip Walkable Area"))
         {
             FindObjectOfType<NavigationVolume>().TestClipWalkableArea();
+        }*/
+
+        if (GUILayout.Button("Do partition"))
+        {
+            FindObjectOfType<NavigationVolume>().DoTestPartition();
         }
     }
 
