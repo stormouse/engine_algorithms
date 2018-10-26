@@ -9,7 +9,8 @@ public class NavmeshArea
 {
     public List<Vector3> contour;
     public List<List<Vector3>> holes;
-    public NavmeshArea() { holes = new List<List<Vector3>>(); }
+    public List<Partition> partitions;
+    public NavmeshArea() { holes = new List<List<Vector3>>(); partitions = new List<Partition>(); }
 }
 
 public class Partition
@@ -93,7 +94,6 @@ public class NavigationVolume : MonoBehaviour {
     private List<List<Vector3>> m_holes = new List<List<Vector3>>();
     private List<List<Vector3>> walkables = new List<List<Vector3>>();
     public List<NavmeshArea> areas = null;
-    public List<Partition> partitions = new List<Partition>();
     public List<NavmeshTrangular> triangulars = new List<NavmeshTrangular>();
     
 
@@ -819,71 +819,17 @@ public class NavigationVolume : MonoBehaviour {
 
     public void DoTestPartition()
     {
-        NavmeshArea a = areas[0];
-        Partition shortestP = null;
-        do
+        foreach (var a in areas)
         {
-            shortestP = null;
-            
-            // partition among points on contour and holes
-            for (int i = 0; i < a.contour.Count - 2; i++)
+            Partition shortestP = null;
+            do
             {
-                for (int j = i + 2; j < a.contour.Count; j++)
+                shortestP = null;
+
+                // partition among points on contour and holes
+                for (int i = 0; i < a.contour.Count - 2; i++)
                 {
-                    // intersect test
-                    Partition p = new Partition
-                    {
-                        points = new List<Vector3>()
-                    };
-                    p.points.Add(a.contour[i]);
-                    p.points.Add(a.contour[j]);
-
-                    bool intersect = false;
-
-                    intersect = IsIntersectWithOtherPartitions(p);
-                    if (!intersect)
-                    {
-                        intersect = IsIntersectWithContourEdges(p, a.contour);
-                    }
-                    if (!intersect)
-                    {
-                        foreach (var h in a.holes)
-                        {
-                            intersect = IsIntersectWithContourEdges(p, h);
-
-                            if (intersect)
-                                break;
-                        }
-                    }
-                    if (intersect)
-                    {
-                        continue;
-                    }
-                    // angle test 重合点会有bug
-                    {
-                        Vector3 partiVec = a.contour[i] - a.contour[j];
-                        Vector3 farVec = a.contour[(j + 1) % a.contour.Count] - a.contour[j];
-                        Vector3 closeVec = a.contour[(j - 1) % a.contour.Count] - a.contour[j];
-
-                        float angleJ = Vector3.Angle(farVec, closeVec);
-                        if (Vector3.Cross(closeVec, farVec).y > 0f)
-                            angleJ = 360 - angleJ;
-                        float angleI = Vector3.Angle(partiVec, closeVec);
-                        if (Vector3.Cross(closeVec, partiVec).y > 0f)
-                            angleI = 360 - angleI;
-
-                        if (angleI > angleJ)
-                        {
-                            continue;
-                        }
-                    }
-
-                    if (shortestP == null || p.Length() < shortestP.Length())
-                        shortestP = p;
-                }
-                foreach (var hole in a.holes)
-                {
-                    for (int j = 0; j < hole.Count; j++)
+                    for (int j = i + 2; j < a.contour.Count; j++)
                     {
                         // intersect test
                         Partition p = new Partition
@@ -891,11 +837,11 @@ public class NavigationVolume : MonoBehaviour {
                             points = new List<Vector3>()
                         };
                         p.points.Add(a.contour[i]);
-                        p.points.Add(hole[j]);
+                        p.points.Add(a.contour[j]);
 
                         bool intersect = false;
 
-                        intersect = IsIntersectWithOtherPartitions(p);
+                        intersect = IsIntersectWithOtherPartitions(p, a);
                         if (!intersect)
                         {
                             intersect = IsIntersectWithContourEdges(p, a.contour);
@@ -914,54 +860,11 @@ public class NavigationVolume : MonoBehaviour {
                         {
                             continue;
                         }
-
-                        if (shortestP == null || p.Length() < shortestP.Length())
-                            shortestP = p;
-                    }
-                }
-            }
-            // partition among points on holes
-            for (int t = 0; t < a.holes.Count; t++)
-            {
-                for (int i = 0; i < a.holes[t].Count - 2; i++)
-                {
-                    for (int j = i + 2; j < a.holes[t].Count; j++)
-                    {
-                        // intersect test
-                        Partition p = new Partition
+                        // angle test 重合点会有bug
                         {
-                            points = new List<Vector3>()
-                        };
-                        p.points.Add(a.holes[t][i]);
-                        p.points.Add(a.holes[t][j]);
-
-                        bool intersect = false;
-
-                        intersect = IsIntersectWithOtherPartitions(p);
-                        if (!intersect)
-                        {
-
-                            intersect = IsIntersectWithContourEdges(p, a.contour);
-                        }
-                        if (!intersect)
-                        {
-                            foreach (var h in a.holes)
-                            {
-                                intersect = IsIntersectWithContourEdges(p, h);
-
-                                if (intersect)
-                                    break;
-                            }
-                        }
-                        if (intersect)
-                        {
-                            continue;
-                        }
-                        // angle test
-                        {
-                            Vector3 partiVec = a.holes[t][i] - a.holes[t][j];
-                            Vector3 farVec = a.holes[t][(j + 1) % a.holes[t].Count] - a.holes[t][j];
-                            Vector3 closeVec = a.holes[t][(j - 1) % a.holes[t].Count] - a.holes[t][j];
+                            Vector3 partiVec = a.contour[i] - a.contour[j];
+                            Vector3 farVec = a.contour[(j + 1) % a.contour.Count] - a.contour[j];
+                            Vector3 closeVec = a.contour[(j - 1) % a.contour.Count] - a.contour[j];
 
                             float angleJ = Vector3.Angle(farVec, closeVec);
                             if (Vector3.Cross(closeVec, farVec).y > 0f)
@@ -970,83 +873,182 @@ public class NavigationVolume : MonoBehaviour {
                             if (Vector3.Cross(closeVec, partiVec).y > 0f)
                                 angleI = 360 - angleI;
 
-                            if (angleI < angleJ)
+                            if (angleI > angleJ)
                             {
                                 continue;
                             }
                         }
+
                         if (shortestP == null || p.Length() < shortestP.Length())
                             shortestP = p;
                     }
-                }
-
-                // to points on other holes
-                if (t != a.holes.Count - 1)
-                {
-                    for (int s = t + 1; s < a.holes.Count; s++)
+                    foreach (var hole in a.holes)
                     {
-                        for (int i = 0; i < a.holes[t].Count; i++)
+                        for (int j = 0; j < hole.Count; j++)
                         {
-                            for (int j = 0; j < a.holes[s].Count; j++)
+                            // intersect test
+                            Partition p = new Partition
                             {
-                                Partition p = new Partition
-                                {
-                                    points = new List<Vector3>()
-                                };
-                                p.points.Add(a.holes[t][i]);
-                                p.points.Add(a.holes[s][j]);
+                                points = new List<Vector3>()
+                            };
+                            p.points.Add(a.contour[i]);
+                            p.points.Add(hole[j]);
 
-                                bool intersect = false;
+                            bool intersect = false;
 
-                                intersect = IsIntersectWithOtherPartitions(p);
-                                if (!intersect)
+                            intersect = IsIntersectWithOtherPartitions(p, a);
+                            if (!intersect)
+                            {
+                                intersect = IsIntersectWithContourEdges(p, a.contour);
+                            }
+                            if (!intersect)
+                            {
+                                foreach (var h in a.holes)
                                 {
-                                    intersect = IsIntersectWithContourEdges(p, a.contour);
+                                    intersect = IsIntersectWithContourEdges(p, h);
+
+                                    if (intersect)
+                                        break;
                                 }
-                                if (!intersect)
-                                {
-                                    foreach (var h in a.holes)
-                                    {
-                                        intersect = IsIntersectWithContourEdges(p, h);
+                            }
+                            if (intersect)
+                            {
+                                continue;
+                            }
 
-                                        if (intersect)
-                                            break;
-                                    }
+                            if (shortestP == null || p.Length() < shortestP.Length())
+                                shortestP = p;
+                        }
+                    }
+                }
+                // partition among points on holes
+                for (int t = 0; t < a.holes.Count; t++)
+                {
+                    for (int i = 0; i < a.holes[t].Count - 2; i++)
+                    {
+                        for (int j = i + 2; j < a.holes[t].Count; j++)
+                        {
+                            // intersect test
+                            Partition p = new Partition
+                            {
+                                points = new List<Vector3>()
+                            };
+                            p.points.Add(a.holes[t][i]);
+                            p.points.Add(a.holes[t][j]);
+
+                            bool intersect = false;
+
+                            intersect = IsIntersectWithOtherPartitions(p, a);
+                            if (!intersect)
+                            {
+
+                                intersect = IsIntersectWithContourEdges(p, a.contour);
+                            }
+                            if (!intersect)
+                            {
+                                foreach (var h in a.holes)
+                                {
+                                    intersect = IsIntersectWithContourEdges(p, h);
+
+                                    if (intersect)
+                                        break;
                                 }
-                                if (intersect)
+                            }
+                            if (intersect)
+                            {
+                                continue;
+                            }
+                            // angle test
+                            {
+                                Vector3 partiVec = a.holes[t][i] - a.holes[t][j];
+                                Vector3 farVec = a.holes[t][(j + 1) % a.holes[t].Count] - a.holes[t][j];
+                                Vector3 closeVec = a.holes[t][(j - 1) % a.holes[t].Count] - a.holes[t][j];
+
+                                float angleJ = Vector3.Angle(farVec, closeVec);
+                                if (Vector3.Cross(closeVec, farVec).y > 0f)
+                                    angleJ = 360 - angleJ;
+                                float angleI = Vector3.Angle(partiVec, closeVec);
+                                if (Vector3.Cross(closeVec, partiVec).y > 0f)
+                                    angleI = 360 - angleI;
+
+                                if (angleI < angleJ)
                                 {
                                     continue;
                                 }
+                            }
+                            if (shortestP == null || p.Length() < shortestP.Length())
+                                shortestP = p;
+                        }
+                    }
 
-                                if (shortestP == null || p.Length() < shortestP.Length())
-                                    shortestP = p;
+                    // to points on other holes
+                    if (t != a.holes.Count - 1)
+                    {
+                        for (int s = t + 1; s < a.holes.Count; s++)
+                        {
+                            for (int i = 0; i < a.holes[t].Count; i++)
+                            {
+                                for (int j = 0; j < a.holes[s].Count; j++)
+                                {
+                                    Partition p = new Partition
+                                    {
+                                        points = new List<Vector3>()
+                                    };
+                                    p.points.Add(a.holes[t][i]);
+                                    p.points.Add(a.holes[s][j]);
 
+                                    bool intersect = false;
+
+                                    intersect = IsIntersectWithOtherPartitions(p, a);
+                                    if (!intersect)
+                                    {
+                                        intersect = IsIntersectWithContourEdges(p, a.contour);
+                                    }
+                                    if (!intersect)
+                                    {
+                                        foreach (var h in a.holes)
+                                        {
+                                            intersect = IsIntersectWithContourEdges(p, h);
+
+                                            if (intersect)
+                                                break;
+                                        }
+                                    }
+                                    if (intersect)
+                                    {
+                                        continue;
+                                    }
+
+                                    if (shortestP == null || p.Length() < shortestP.Length())
+                                        shortestP = p;
+
+                                }
                             }
                         }
                     }
                 }
-            }
-            if (shortestP != null)
-                partitions.Add(shortestP);
-            Debug.Log(shortestP);
-        } while (shortestP != null);
-        
-        Debug.Log(string.Format("# Partitions : {0}", partitions.Count));
+                if (shortestP != null)
+                    a.partitions.Add(shortestP);
+                Debug.Log(shortestP);
+            } while (shortestP != null);
+
+            Debug.Log(string.Format("# Partitions : {0}", a.partitions.Count));
+        }
     }
 
-    private bool IsIntersectWithOtherPartitions(Partition p)
+    private bool IsIntersectWithOtherPartitions(Partition p, NavmeshArea a)
     {
-        for (int k = 0; k < partitions.Count; k++)
+        for (int k = 0; k < a.partitions.Count; k++)
         {
-            if ((p.points[0] == partitions[k].points[0] && p.points[1] == partitions[k].points[1]) || (p.points[0] == partitions[k].points[1] && p.points[1] == partitions[k].points[0]))
+            if ((p.points[0] == a.partitions[k].points[0] && p.points[1] == a.partitions[k].points[1]) || (p.points[0] == a.partitions[k].points[1] && p.points[1] == a.partitions[k].points[0]))
                 return true;
 
-            Vector3 left = partitions[k].points[0] - p.points[0];
-            Vector3 right = partitions[k].points[1] - p.points[0];
+            Vector3 left = a.partitions[k].points[0] - p.points[0];
+            Vector3 right = a.partitions[k].points[1] - p.points[0];
             Vector3 middle = p.points[1] - p.points[0];
-            Vector3 left0 = p.points[0] - partitions[k].points[0];
-            Vector3 right0 = p.points[1] - partitions[k].points[0];
-            Vector3 middle0 = partitions[k].points[1] - partitions[k].points[0];
+            Vector3 left0 = p.points[0] - a.partitions[k].points[0];
+            Vector3 right0 = p.points[1] - a.partitions[k].points[0];
+            Vector3 middle0 = a.partitions[k].points[1] - a.partitions[k].points[0];
             if (Vector3.Cross(left, middle).y * Vector3.Cross(right, middle).y < 0f && Vector3.Cross(left0, middle0).y * Vector3.Cross(right0, middle0).y < 0f)
             {
                 return true;
@@ -1146,14 +1148,6 @@ public class NavigationVolume : MonoBehaviour {
         //    Gizmos.DrawLine(p[p.Count - 1], p[0]);
         //}
 
-        if (partitions != null)
-        {
-            foreach (var p in partitions)
-            {
-                Gizmos.color = Color.yellow;
-                Gizmos.DrawLine(p.points[0], p.points[1]);
-            }
-        }
 
         if(areas != null)
         {
@@ -1165,6 +1159,8 @@ public class NavigationVolume : MonoBehaviour {
 
                 for (int i = 1; i < a.contour.Count - 1; i++)
                 {
+                    if (a.contour[i] == a.contour[i+1])
+                        Gizmos.DrawSphere(a.contour[i], 0.1f);
                     Gizmos.DrawLine(a.contour[i], a.contour[i + 1]);
                 }
                 Gizmos.color = new Color(0f, 0f, 1f);
@@ -1184,6 +1180,15 @@ public class NavigationVolume : MonoBehaviour {
 
                     Gizmos.DrawLine(hole[hole.Count - 1], hole[0]);
                 }
+
+
+
+                    foreach (var p in a.partitions)
+                    {
+                        Gizmos.color = Color.yellow;
+                        Gizmos.DrawLine(p.points[0], p.points[1]);
+                    }
+                
             }
         }
     }
