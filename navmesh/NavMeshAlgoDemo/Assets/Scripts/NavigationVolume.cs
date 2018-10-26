@@ -10,7 +10,13 @@ public class NavmeshArea
     public List<Vector3> contour;
     public List<List<Vector3>> holes;
     public List<Partition> partitions;
-    public NavmeshArea() { holes = new List<List<Vector3>>(); partitions = new List<Partition>(); }
+    public List<NavmeshTriangular> tris;
+    public NavmeshArea()
+    {
+        holes = new List<List<Vector3>>();
+        partitions = new List<Partition>();
+        tris = new List<NavmeshTriangular>();
+    }
 }
 
 public class Partition
@@ -20,11 +26,19 @@ public class Partition
     {
         return Vector3.Distance(points[0], points[1]);
     }
+    public Partition ()
+    {
+        points = new List<Vector3>();
+    }
 }
 
-public class NavmeshTrangular
+public class NavmeshTriangular
 {
     public List<Vector3> points;
+    public NavmeshTriangular()
+    {
+        points = new List<Vector3>();
+    }
 }
 
 public class NavigationVolume : MonoBehaviour {
@@ -94,7 +108,6 @@ public class NavigationVolume : MonoBehaviour {
     private List<List<Vector3>> m_holes = new List<List<Vector3>>();
     private List<List<Vector3>> walkables = new List<List<Vector3>>();
     public List<NavmeshArea> areas = null;
-    public List<NavmeshTrangular> triangulars = new List<NavmeshTrangular>();
     
 
     private void Start()
@@ -832,10 +845,7 @@ public class NavigationVolume : MonoBehaviour {
                     for (int j = i + 2; j < a.contour.Count; j++)
                     {
                         // intersect test
-                        Partition p = new Partition
-                        {
-                            points = new List<Vector3>()
-                        };
+                        Partition p = new Partition();
                         p.points.Add(a.contour[i]);
                         p.points.Add(a.contour[j]);
 
@@ -887,10 +897,7 @@ public class NavigationVolume : MonoBehaviour {
                         for (int j = 0; j < hole.Count; j++)
                         {
                             // intersect test
-                            Partition p = new Partition
-                            {
-                                points = new List<Vector3>()
-                            };
+                            Partition p = new Partition();
                             p.points.Add(a.contour[i]);
                             p.points.Add(hole[j]);
 
@@ -929,10 +936,7 @@ public class NavigationVolume : MonoBehaviour {
                         for (int j = i + 2; j < a.holes[t].Count; j++)
                         {
                             // intersect test
-                            Partition p = new Partition
-                            {
-                                points = new List<Vector3>()
-                            };
+                            Partition p = new Partition();
                             p.points.Add(a.holes[t][i]);
                             p.points.Add(a.holes[t][j]);
 
@@ -990,10 +994,7 @@ public class NavigationVolume : MonoBehaviour {
                             {
                                 for (int j = 0; j < a.holes[s].Count; j++)
                                 {
-                                    Partition p = new Partition
-                                    {
-                                        points = new List<Vector3>()
-                                    };
+                                    Partition p = new Partition();
                                     p.points.Add(a.holes[t][i]);
                                     p.points.Add(a.holes[s][j]);
 
@@ -1059,8 +1060,13 @@ public class NavigationVolume : MonoBehaviour {
 
     private bool IsIntersectWithContourEdges(Partition p, List<Vector3> contour)
     {
+        
+
         for (int k = 0; k < contour.Count; k++)
         {
+            if ((contour[k] == p.points[0] && contour[(k + 1) % contour.Count] == p.points[1]) || (contour[k] == p.points[1] && contour[(k + 1) % contour.Count] == p.points[0]))
+                return true;
+
             Vector3 left = contour[k] -p.points[0];
             Vector3 right = contour[(k + 1) % contour.Count] -p.points[0];
             Vector3 middle = p.points[1] -p.points[0];
@@ -1077,7 +1083,107 @@ public class NavigationVolume : MonoBehaviour {
 
     public void DoTestTriangulation()
     {
+        foreach (var a in areas)
+        {
+            List<Partition> edges = new List<Partition>();
+            for (int i = 0; i < a.contour.Count; i ++)
+            {
+                Partition p = new Partition();
+                p.points.Add(a.contour[i]);
+                p.points.Add(a.contour[(i + 1) % a.contour.Count]);
+                edges.Add(p);
+            }
 
+            foreach (var hole in a.holes)
+            {
+                for (int i = 0; i < hole.Count; i ++)
+                {
+                    Partition p = new Partition();
+                    p.points.Add(hole[i]);
+                    p.points.Add(hole[(i + 1) % hole.Count]);
+                    edges.Add(p);
+                }
+            }
+
+            foreach (var p in a.partitions)
+            {
+                edges.Add(p);
+            }
+            for (int i = 0; i < edges.Count - 2; i ++)
+            {
+                for (int j = i + 1; j < edges.Count - 1;  j++)
+                {
+                    bool match = false;
+                    for (int left = 0; left < 2; left ++)
+                    {
+                        if (match) break;
+                        for (int right = 0; right < 2; right ++)
+                        {
+                            if (match) break;
+                            if (edges[i].points[left] == edges[j].points[right])
+                            {
+                                for (int k = j + 1; k < edges.Count; k++)
+                                {
+                                    if (match) break;
+                                    for (int middle = 0; middle < 2; middle ++)
+                                    {
+                                        if (match) break;
+                                        if (edges[i].points[1 - left] == edges[k].points[middle] && 
+                                            edges[j].points[1 - right] == edges[k].points[ 1 - middle])
+                                        {
+                                            NavmeshTriangular nt = new NavmeshTriangular();
+
+                                            nt.points.Add(edges[i].points[left]);
+                                            nt.points.Add(edges[i].points[1 - left]);
+                                            nt.points.Add(edges[j].points[1 - right]);
+
+                                            a.tris.Add(nt);
+                                            match = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+
+            // why there's overlapped tris
+            for (int i = 0; i < a.tris.Count - 1; i ++)
+            {
+                for (int j = i+1; j < a.tris.Count; j ++)
+                {
+                    if (IsSameTriangles(a.tris[i],a.tris[j]))
+                    {
+                        Debug.Log("tri same");
+                    }
+                }
+            }
+        }
+
+        
+    }
+
+    private bool IsSameTriangles(NavmeshTriangular tri0, NavmeshTriangular tri1)
+    {
+        bool[] tri0matched = {false, false, false};
+        bool[] tri1matched = {false, false, false};
+        for (int i = 0; i < 3; i ++)
+        {
+            for (int j = 0; j < 3; j ++)
+            {
+                if (tri0.points[i] == tri1.points[j] && !tri0matched[i] && !tri0matched[j])
+                {
+                    tri0matched[i] = true;
+                    tri1matched[j] = true;
+                }
+                if (!tri0matched[i])
+                    return false;
+            }
+        }
+
+        return true;
     }
 
     private void OnDrawGizmosSelected()
@@ -1151,22 +1257,22 @@ public class NavigationVolume : MonoBehaviour {
 
         if(areas != null)
         {
-            foreach(var a in areas)
+            foreach (var a in areas)
             {
-                Gizmos.color = new Color(1f, 0f, 0f);
-                Gizmos.DrawLine(a.contour[0], a.contour[1]);
-                Gizmos.color = new Color(0.5f, 0.8f, 0.8f);
-
-                for (int i = 1; i < a.contour.Count - 1; i++)
                 {
-                    if (a.contour[i] == a.contour[i+1])
-                        Gizmos.DrawSphere(a.contour[i], 0.1f);
-                    Gizmos.DrawLine(a.contour[i], a.contour[i + 1]);
+                    Gizmos.color = new Color(1f, 0f, 0f);
+                    Gizmos.DrawLine(a.contour[0], a.contour[1]);
+                    Gizmos.color = new Color(0.5f, 0.8f, 0.8f);
+                    for (int i = 1; i < a.contour.Count - 1; i++)
+                    {
+                        if (a.contour[i] == a.contour[i + 1])
+                            Gizmos.DrawSphere(a.contour[i], 0.1f);
+                        Gizmos.DrawLine(a.contour[i], a.contour[i + 1]);
+                    }
+                    Gizmos.color = new Color(0f, 0f, 1f);
+                    Gizmos.DrawLine(a.contour[a.contour.Count - 1], a.contour[0]);
                 }
-                Gizmos.color = new Color(0f, 0f, 1f);
-                Gizmos.DrawLine(a.contour[a.contour.Count - 1], a.contour[0]);
 
-                
                 foreach (var hole in a.holes)
                 {
                     Gizmos.color = new Color(1f, 0f, 0f);
@@ -1182,13 +1288,37 @@ public class NavigationVolume : MonoBehaviour {
                 }
 
 
+             
+                foreach (var p in a.partitions)
+                {
+                    Gizmos.color = Color.yellow;
+                    Gizmos.DrawLine(p.points[0], p.points[1]);
+                }
 
-                    foreach (var p in a.partitions)
+                foreach (var tri in a.tris)
+                {
+                    Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.5f);
+                    Mesh m = new Mesh();
+                    Vector3[] vertices = new Vector3[3];
+                    vertices[0] = tri.points[0];
+                    vertices[1] = tri.points[1];
+                    vertices[2] = tri.points[2];
+                    m.vertices = vertices;
+                    int[] triangles = new int[3];
+                    triangles[0] = 0;
+                    triangles[1] = 1;
+                    triangles[2] = 2;
+                    if (Vector3.Cross(vertices[1] - vertices[0], vertices[2] - vertices[0]).y < 0f)
                     {
-                        Gizmos.color = Color.yellow;
-                        Gizmos.DrawLine(p.points[0], p.points[1]);
+                        triangles[1] = 2;
+                        triangles[2] = 1;
                     }
-                
+
+                    
+                    m.triangles = triangles;
+                    m.RecalculateNormals();
+                    Gizmos.DrawMesh(m);
+                }
             }
         }
     }
