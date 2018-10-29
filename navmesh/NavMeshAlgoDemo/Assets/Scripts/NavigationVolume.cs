@@ -147,7 +147,7 @@ public class NavigationVolume : MonoBehaviour {
     private List<List<Vector3>> m_holes = new List<List<Vector3>>();
     private List<List<Vector3>> walkables = new List<List<Vector3>>();
     public List<NavmeshArea> areas = null;
-    
+   
 
     private void Start()
     {
@@ -1223,11 +1223,6 @@ public class NavigationVolume : MonoBehaviour {
         return true;
     }
 
-    private void AddTriangleToEdge(NavmeshTriangle nt, Partition p)
-    {
-        p.tris.Add(nt);
-
-    }
 
 
     private void OnDrawGizmosSelected()
@@ -1351,16 +1346,21 @@ public class NavigationVolume : MonoBehaviour {
                     int[] triangles = new int[3];
                     triangles[0] = 0;
                     triangles[1] = 1;
-                    triangles[2] = 2;
-                    //if (Vector3.Cross(vertices[1] - vertices[0], vertices[2] - vertices[0]).y < 0f)
-                    //{
-                    //    triangles[1] = 2;
-                    //    triangles[2] = 1;
-                    //}
-                                       
+                    triangles[2] = 2;                                       
                     m.triangles = triangles;
                     m.RecalculateNormals();
                     Gizmos.DrawMesh(m);
+
+                    Vector3 myCenter = (tri.points[0] + tri.points[1] + tri.points[2]) / 3;
+                    foreach (var neighbor in tri.Neighbors)
+                    {
+                        if(neighbor != null)
+                        {
+                            Vector3 otherCenter = (neighbor.points[0] + neighbor.points[1] + neighbor.points[2]) / 3;
+                            Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.5f);
+                            Gizmos.DrawLine(myCenter, otherCenter);
+                        }
+                    }
                 }
             }
         }
