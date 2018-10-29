@@ -11,11 +11,13 @@ public class NavmeshArea
     public List<List<Vector3>> holes;
     public List<Partition> partitions;
     public List<NavmeshTriangle> tris;
+    public List<NavmeshPoint> points;
     public NavmeshArea()
     {
         holes = new List<List<Vector3>>();
         partitions = new List<Partition>();
         tris = new List<NavmeshTriangle>();
+        points = new List<NavmeshPoint>();
     }
 }
 
@@ -36,47 +38,26 @@ public class Partition
 
 public class NavmeshTriangle
 {
-    public List<Vector3> points;
+    public List<NavmeshPoint> points;
     public List<Partition> edges;
-    private List<NavmeshTriangle> neighbors;
-    public bool isInit;
     public NavmeshTriangle()
     {
-        points = new List<Vector3>();
+        points = new List<NavmeshPoint>();
         edges = new List<Partition>();
-        neighbors = new List<NavmeshTriangle>();
-        isInit = false;
     }
+}
 
-    public List<NavmeshTriangle> Neighbors
+public class NavmeshPoint
+{
+    public Vector3 point;
+    public List<NavmeshPoint> neighbors;
+    public NavmeshPoint next = null;
+    public float g = float.MaxValue;
+    public float h = 0;
+    public NavmeshPoint(Vector3 _point)
     {
-        get
-        {
-            if (!isInit)
-            {
-                for (int i =0; i < edges.Count; i ++)
-                {
-                    if (edges[i].tris.Count == 2)
-                    {
-                        if (edges[i].tris[0] == this)
-                        {
-                            neighbors.Add(edges[i].tris[1]);
-                        }
-                        else
-                        {
-                            neighbors.Add(edges[i].tris[0]);
-                        }
-                    }
-                    else
-                    {
-                        neighbors.Add(null); // means this edge does not connect to the other triangle
-                    }
-                }
-
-                isInit = true;
-            } 
-            return neighbors;
-        }
+        point = _point;
+        neighbors = new List<NavmeshPoint>();
     }
 }
 
@@ -137,6 +118,9 @@ public class NavigationVolume : MonoBehaviour {
 
     public float gridSize;
     public Bounds bounds;
+
+    public GameObject player;
+    public GameObject dest;
 
     private int numRows;
     private int numCols;
@@ -200,6 +184,11 @@ public class NavigationVolume : MonoBehaviour {
     private Vector3 IndexToVector(int x, int z)
     {
         return bounds.min + Vector3.right * x * gridSize + Vector3.forward * z * gridSize + Vector3.up * bounds.extents.y;
+    }
+
+    private Vector3 CoordToVector(float x, float z)
+    {
+        return new Vector3(x, 0f, z) + Vector3.up * bounds.extents.y;
     }
 
     private int CalcDir(int dx, int dz)
@@ -1161,31 +1150,25 @@ public class NavigationVolume : MonoBehaviour {
                                         {
                                             NavmeshTriangle nt = new NavmeshTriangle();
 
-                                            nt.points.Add(edges[i].points[left]);
+                                            NavmeshPoint np0 = GetNavmeshPointFromArea(edges[i].points[left], a);
+                                            nt.points.Add(np0);
                                             //                0
                                             //              /   \
                                             //            2  -  1
+                                            NavmeshPoint np1 = GetNavmeshPointFromArea(edges[i].points[1 - left], a);
+                                            NavmeshPoint np2 = GetNavmeshPointFromArea(edges[j].points[1 - right], a);
                                             if (Vector3.Cross(edges[i].points[1 - left] - edges[i].points[left], edges[j].points[1 - right] - edges[i].points[left]).y < 0f)
                                             {
-                                                nt.edges.Add(edges[j]);
-                                                nt.points.Add(edges[j].points[1 - right]);
-                                                nt.edges.Add(edges[k]);
-                                                nt.points.Add(edges[i].points[1 - left]);
-                                                nt.edges.Add(edges[i]);
+                                                nt.points.Add(np2);
+                                                nt.points.Add(np1);
                                             } else
                                             {
-                                                nt.edges.Add(edges[i]);
-                                                nt.points.Add(edges[i].points[1 - left]);
-                                                nt.edges.Add(edges[k]);
-                                                nt.points.Add(edges[j].points[1 - right]);
-                                                nt.edges.Add(edges[j]);
+                                                nt.points.Add(np1);
+                                                nt.points.Add(np2);
+
                                             }
 
-                                            edges[i].tris.Add(nt);
-                                            edges[j].tris.Add(nt);
-                                            edges[k].tris.Add(nt);
                                             a.tris.Add(nt);
-
                                             match = true;
                                         }
                                     }
@@ -1198,8 +1181,19 @@ public class NavigationVolume : MonoBehaviour {
 
 
         }
+    }
 
-        
+    private NavmeshPoint GetNavmeshPointFromArea(Vector3 rawPoint, NavmeshArea a)
+    {
+        for (int i = 0; i < a.points.Count; i ++)
+        {
+            if (a.points[i].point == rawPoint)
+                return a.points[i];
+        }
+
+        NavmeshPoint n = new NavmeshPoint(rawPoint);
+        a.points.Add(n);
+        return n;
     }
 
     private bool IsSameTriangles(NavmeshTriangle tri0, NavmeshTriangle tri1)
@@ -1223,7 +1217,59 @@ public class NavigationVolume : MonoBehaviour {
         return true;
     }
 
+    private void PreCookH()
+    {
 
+    }
+
+    public void DoTestPathFinding()
+    {
+        Vector3 startingPoint = player.transform.position;
+        Vector3 destPoint = dest.transform.position;
+
+        // test if in the same are
+
+        // get all vertices in the area
+
+        // in the same triangle
+
+
+
+
+        // no in the same triangle
+
+    }
+
+    private bool IsGameObjectInTriangle(GameObject gameObject, NavmeshTriangle tri)
+    {
+        Vector3 pos = CoordToVector(gameObject.transform.position.x, gameObject.transform.position.z);
+
+        return IsPointInTriangle(pos, tri.points[0].point, tri.points[1].point, tri.points[2].point);
+    }
+    
+    /// <summary>
+    /// whether point p1 and p2 are on the same side of segment ab;
+    /// </summary>
+    /// <param name="p1"></param>
+    /// <param name="p2"></param>
+    /// <param name="a"></param>
+    /// <param name="b"></param>
+    /// <returns></returns>
+    private bool IsSameSide(Vector3 p1, Vector3 p2, Vector3 a, Vector3 b)
+    {
+        Vector3 cp1 = Vector3.Cross(b - a, p1 - a);
+        Vector3 cp2 = Vector3.Cross(b - a, p2 - a);
+        if (Vector3.Dot(cp1, cp2) >= 0)
+            return true;
+        return false;
+    }
+
+    private bool IsPointInTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
+    {
+        if (IsSameSide(p, a, b, c) && IsSameSide(p, b, a, c) && IsSameSide(p, c, a, b))
+            return true;
+        return false;
+    }
 
     private void OnDrawGizmosSelected()
     {
@@ -1336,12 +1382,20 @@ public class NavigationVolume : MonoBehaviour {
 
                 foreach (var tri in a.tris)
                 {
-                    Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.5f);
+                    Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.25f);
+                    if (IsGameObjectInTriangle(player, tri))
+                    {
+                        Gizmos.color = new Color(0.8f, 0.2f, 0.2f, 0.5f);
+                    }
+                    if (IsGameObjectInTriangle(dest, tri))
+                    {
+                        Gizmos.color = new Color(0.2f, 0.2f, 0.8f, 0.5f);
+                    }
                     Mesh m = new Mesh();
                     Vector3[] vertices = new Vector3[3];
-                    vertices[0] = tri.points[0];
-                    vertices[1] = tri.points[1];
-                    vertices[2] = tri.points[2];
+                    vertices[0] = tri.points[0].point;
+                    vertices[1] = tri.points[1].point;
+                    vertices[2] = tri.points[2].point;
                     m.vertices = vertices;
                     int[] triangles = new int[3];
                     triangles[0] = 0;
@@ -1351,6 +1405,7 @@ public class NavigationVolume : MonoBehaviour {
                     m.RecalculateNormals();
                     Gizmos.DrawMesh(m);
 
+                    /*
                     Vector3 myCenter = (tri.points[0] + tri.points[1] + tri.points[2]) / 3;
                     foreach (var neighbor in tri.Neighbors)
                     {
@@ -1361,6 +1416,7 @@ public class NavigationVolume : MonoBehaviour {
                             Gizmos.DrawLine(myCenter, otherCenter);
                         }
                     }
+                    */
                 }
             }
         }

@@ -67,6 +67,11 @@ public class MeshCollection : MonoBehaviour {
         {
             FindObjectOfType<NavigationVolume>().DoTestTriangulation();
         }
+
+        if (GUILayout.Button("Do pathFinding"))
+        {
+            FindObjectOfType<NavigationVolume>().DoTestPathFinding();
+        }
     }
 
     private void DrawTriangles()
