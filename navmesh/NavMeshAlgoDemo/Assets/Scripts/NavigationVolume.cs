@@ -51,18 +51,26 @@ public class NavmeshPoint
 {
     public Vector3 point;
     public List<NavmeshPoint> neighbors;
-    public NavmeshPoint next = null;
+    public NavmeshPoint prec = null;
     public float g = float.MaxValue;
     public float h = 0;
+    public bool open = false;
     public NavmeshPoint(Vector3 _point)
     {
         point = _point;
         neighbors = new List<NavmeshPoint>();
     }
+
+    public static float Disdance(NavmeshPoint np0, NavmeshPoint np1)
+    {
+        return Vector3.Distance(np0.point, np1.point);
+    }
 }
 
 public class NavigationVolume : MonoBehaviour {
 
+    private NavmeshPoint startedPoint = null;
+    private NavmeshPoint destedPoint = null;
 
     class VertexNode
     {
@@ -132,7 +140,6 @@ public class NavigationVolume : MonoBehaviour {
     private List<List<Vector3>> walkables = new List<List<Vector3>>();
     public List<NavmeshArea> areas = null;
    
-
     private void Start()
     {
         Debug.Log(Vector3.Angle(new Vector3(1, 0, 0), new Vector3(-1, 0, 0)));
@@ -188,7 +195,7 @@ public class NavigationVolume : MonoBehaviour {
 
     private Vector3 CoordToVector(float x, float z)
     {
-        return new Vector3(x, 0f, z) + Vector3.up * bounds.extents.y;
+        return new Vector3(x, bounds.min.y, z) + Vector3.up * bounds.extents.y;
     }
 
     private int CalcDir(int dx, int dz)
@@ -1179,7 +1186,23 @@ public class NavigationVolume : MonoBehaviour {
                 }
             }
 
-
+            foreach (var edge in edges)
+            {
+                NavmeshPoint np0 = null;
+                NavmeshPoint np1 = null;
+                for (int i = 0; i < a.points.Count; i ++)
+                {
+                    if (a.points[i].point == edge.points[0])
+                        np0 = a.points[i];
+                    if (a.points[i].point == edge.points[1])
+                        np1 = a.points[i];
+                }
+                if (np0 != null && np1 != null)
+                {
+                    np0.neighbors.Add(np1);
+                    np1.neighbors.Add(np0);
+                }
+            }
         }
     }
 
@@ -1224,27 +1247,160 @@ public class NavigationVolume : MonoBehaviour {
 
     public void DoTestPathFinding()
     {
-        Vector3 startingPoint = player.transform.position;
-        Vector3 destPoint = dest.transform.position;
+        Vector3 startPoint_raw = CoordToVector(player.transform.position.x, player.transform.position.z);
+        Vector3 destPoint_raw = CoordToVector(dest.transform.position.x, dest.transform.position.z);
 
-        // test if in the same are
+        NavmeshPoint startPoint = null;
+        NavmeshPoint destPoint = null;
+        RemovePointFromVolume(startedPoint);
+        startPoint = new NavmeshPoint(startPoint_raw);
+        RemovePointFromVolume(destedPoint);
+        destPoint = new NavmeshPoint(destPoint_raw);
+      
+        // test if in the same area
+        NavmeshTriangle startTri = null;
+        NavmeshTriangle destTri = null;
+        NavmeshArea currentArea = null;
+        foreach (var a in areas)
+        {
+            foreach (var tri in a.tris)
+            {
+                if (IsPointInTriangle(startPoint.point, tri))
+                {
+                    startTri = tri;
+                }
+                if (IsPointInTriangle(destPoint.point,tri))
+                {
+                    destTri = tri;
+                }
+                if (startTri != null && destTri != null)
+                    break;
+            }
 
-        // get all vertices in the area
+            if ((startTri == null && destTri != null) || (startTri != null && destTri == null))
+            {
+                Debug.Log("not in the same area");
+                return;
+            }
 
-        // in the same triangle
+            if (startTri !=null && destTri != null)
+            {
+                currentArea = a;
+                break;
+            }
+        }
+        if (startTri == null)
+        {
+            Debug.Log("start point not in the volume");
+            return;
+        }
+        if (destTri == null)
+        {
+            Debug.Log("dest point not in the volume");
+            return;
+        }
+        if (currentArea == null)
+        {
+            Debug.Log("not in any area?");
+            return;
+        }
 
+        foreach (var np in startTri.points)
+        {
+            np.neighbors.Add(startPoint);
+            startPoint.neighbors.Add(np);
+        }
+        foreach (var np in destTri.points)
+        {
+            np.neighbors.Add(destPoint);
+            destPoint.neighbors.Add(np);
+        }
+        // in same triangle
+        if (startTri == destTri)
+        {
+            startPoint.neighbors.Add(destPoint);
+            destPoint.neighbors.Add(startPoint);
+        }
 
+        // reset
+        foreach (var np in currentArea.points)
+        {
+            np.h = NavmeshPoint.Disdance(np, destPoint);
+            np.open = false;
+            np.prec = null;
+        }
+        startPoint.g = 0;
+        startPoint.open = true;
+        destPoint.h = 0;
+        // no priority queue in c#?
+        List<NavmeshPoint> navmeshPointsList= new List<NavmeshPoint>();
+        navmeshPointsList.Add(startPoint);
 
+        NavmeshPoint currentPoint = null;
+        while(navmeshPointsList.Count > 0)
+        {
+            float minOpenF = float.MaxValue;
+            NavmeshPoint minOpenNP = null;
+            foreach (var np in navmeshPointsList)
+            {
+                if (np.g + np.h < minOpenF)
+                {
+                    minOpenF = np.g + np.h;
+                    minOpenNP = np;
+                }
+            }
 
-        // no in the same triangle
+            currentPoint = minOpenNP;
+            
+            foreach (NavmeshPoint neighborPoint in currentPoint.neighbors)
+            {
+                float edgeLength = NavmeshPoint.Disdance(currentPoint, neighborPoint);
+                if (neighborPoint.g > currentPoint.g + edgeLength)
+                {
+                    neighborPoint.g = currentPoint.g + edgeLength;
+                    neighborPoint.prec = currentPoint;
+                    if (!neighborPoint.open)
+                    {
+                        navmeshPointsList.Add(neighborPoint);
+                        neighborPoint.open = true;
+                    }
+                }
+            }
 
+            navmeshPointsList.Remove(currentPoint);
+            currentPoint.open = false;
+
+            if (destPoint.prec != null)
+                break;
+        }
+        startedPoint = startPoint;
+        destedPoint = destPoint;
+        // player start moving
     }
 
-    private bool IsGameObjectInTriangle(GameObject gameObject, NavmeshTriangle tri)
-    {
-        Vector3 pos = CoordToVector(gameObject.transform.position.x, gameObject.transform.position.z);
 
-        return IsPointInTriangle(pos, tri.points[0].point, tri.points[1].point, tri.points[2].point);
+
+    private bool IsPointInTriangle(Vector3 point_raw, NavmeshTriangle tri)
+    {
+        return IsPointInTriangle(point_raw, tri.points[0].point, tri.points[1].point, tri.points[2].point);
+    }
+
+    private bool RemovePointFromVolume(NavmeshPoint np)
+    {
+        if (np == null)
+            return false;
+            
+        foreach (var neighborPoint in np.neighbors)
+        {
+            neighborPoint.neighbors.Remove(np);
+        }
+
+        foreach (var a in areas)
+        {
+            if (a.points.Remove(np))
+                return true;
+        }
+        return false;
     }
     
     /// <summary>
@@ -1383,11 +1539,11 @@ public class NavigationVolume : MonoBehaviour {
                 foreach (var tri in a.tris)
                 {
                     Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.25f);
-                    if (IsGameObjectInTriangle(player, tri))
+                    if (IsPointInTriangle(CoordToVector(player.transform.position.x, player.transform.position.z), tri))
                     {
                         Gizmos.color = new Color(0.8f, 0.2f, 0.2f, 0.5f);
                     }
-                    if (IsGameObjectInTriangle(dest, tri))
+                    if (IsPointInTriangle(CoordToVector(dest.transform.position.x, dest.transform.position.z), tri))
                     {
                         Gizmos.color = new Color(0.2f, 0.2f, 0.8f, 0.5f);
                     }
@@ -1417,6 +1573,19 @@ public class NavigationVolume : MonoBehaviour {
                         }
                     }
                     */
+                }
+
+                // has a route
+                Gizmos.color = new Color(1f, 0.5f, 1f);
+                if (startedPoint != null && destedPoint != null && destedPoint.prec != null)
+                {
+                    NavmeshPoint currentNp = destedPoint;
+                    while (currentNp != startedPoint)
+                    {
+                        Gizmos.DrawWireSphere(currentNp.point, 0.2f);
+                        Gizmos.DrawLine(currentNp.point, currentNp.prec.point);
+                        currentNp = currentNp.prec;
+                    }
                 }
             }
         }
