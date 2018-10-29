@@ -22,7 +22,7 @@ public class NavmeshArea
 public class Partition
 {
     public List<Vector3> points;
-    public List<NavmeshTriangle> tris; // 0 is on clock wise side
+    public List<NavmeshTriangle> tris; 
     public float Length()
     {
         return Vector3.Distance(points[0], points[1]);
@@ -37,9 +37,46 @@ public class Partition
 public class NavmeshTriangle
 {
     public List<Vector3> points;
+    public List<Partition> edges;
+    private List<NavmeshTriangle> neighbors;
+    public bool isInit;
     public NavmeshTriangle()
     {
         points = new List<Vector3>();
+        edges = new List<Partition>();
+        neighbors = new List<NavmeshTriangle>();
+        isInit = false;
+    }
+
+    public List<NavmeshTriangle> Neighbors
+    {
+        get
+        {
+            if (!isInit)
+            {
+                for (int i =0; i < edges.Count; i ++)
+                {
+                    if (edges[i].tris.Count == 2)
+                    {
+                        if (edges[i].tris[0] == this)
+                        {
+                            neighbors.Add(edges[i].tris[1]);
+                        }
+                        else
+                        {
+                            neighbors.Add(edges[i].tris[0]);
+                        }
+                    }
+                    else
+                    {
+                        neighbors.Add(null); // means this edge does not connect to the other triangle
+                    }
+                }
+
+                isInit = true;
+            } 
+            return neighbors;
+        }
     }
 }
 
@@ -395,9 +432,7 @@ public class NavigationVolume : MonoBehaviour {
         Debug.Log(string.Format("# Navmesh areas: {0}", result.Count));
         return result;
     }
-
-
-
+    
     private void MergePolygons(List<List<Vector3>> polygons)
     {
         int n = polygons.Count;
@@ -482,8 +517,6 @@ public class NavigationVolume : MonoBehaviour {
     {
         bool changed = PolygonSubtract(walkables[0], m_holes[0], out clippingResults);
     }
-
-
 
     List<Vector3> debugIntersections = new List<Vector3>();
     
@@ -608,9 +641,6 @@ public class NavigationVolume : MonoBehaviour {
         return Mathf.Min(v0.z, v1.z) < z && z <= Mathf.Max(v0.z, v1.z);
     }
 
-
-
-
     private bool GetInsideness(Vector3 point, List<Vector3> v)
     {
         int wn = 0;
@@ -624,8 +654,6 @@ public class NavigationVolume : MonoBehaviour {
         }
         return wn != 0; // true <--> inside
     }
-
-
 
     private List<VertexWANode> GetWAIntersections(VertexWANode contourHead, VertexWANode clipperHead, bool headInside)
     {
@@ -680,7 +708,6 @@ public class NavigationVolume : MonoBehaviour {
         return intersections;
     }
 
-
     private VertexWANode MakeLinkedLoop(List<Vector3> polygon, bool reverse = false)
     {
         int n = polygon.Count;
@@ -701,7 +728,6 @@ public class NavigationVolume : MonoBehaviour {
 
         return head;
     }
-
 
     private bool PolygonSubtract(List<Vector3> contour, List<Vector3> clipper, out List<List<Vector3>> result)
     {
@@ -780,7 +806,6 @@ public class NavigationVolume : MonoBehaviour {
 
         return true;
     }
-
 
     private bool PolygonUnion(List<Vector3> ct1, List<Vector3> ct2, out List<Vector3> result)
     {
@@ -1142,15 +1167,25 @@ public class NavigationVolume : MonoBehaviour {
                                             //            2  -  1
                                             if (Vector3.Cross(edges[i].points[1 - left] - edges[i].points[left], edges[j].points[1 - right] - edges[i].points[left]).y < 0f)
                                             {
+                                                nt.edges.Add(edges[j]);
                                                 nt.points.Add(edges[j].points[1 - right]);
+                                                nt.edges.Add(edges[k]);
                                                 nt.points.Add(edges[i].points[1 - left]);
+                                                nt.edges.Add(edges[i]);
                                             } else
                                             {
+                                                nt.edges.Add(edges[i]);
                                                 nt.points.Add(edges[i].points[1 - left]);
+                                                nt.edges.Add(edges[k]);
                                                 nt.points.Add(edges[j].points[1 - right]);
+                                                nt.edges.Add(edges[j]);
                                             }
 
+                                            edges[i].tris.Add(nt);
+                                            edges[j].tris.Add(nt);
+                                            edges[k].tris.Add(nt);
                                             a.tris.Add(nt);
+
                                             match = true;
                                         }
                                     }
@@ -1160,10 +1195,7 @@ public class NavigationVolume : MonoBehaviour {
                     }
                 }
             }
-            // find neighbors;
 
-
-            
 
         }
 
@@ -1191,6 +1223,11 @@ public class NavigationVolume : MonoBehaviour {
         return true;
     }
 
+    private void AddTriangleToEdge(NavmeshTriangle nt, Partition p)
+    {
+        p.tris.Add(nt);
+
+    }
 
 
     private void OnDrawGizmosSelected()
