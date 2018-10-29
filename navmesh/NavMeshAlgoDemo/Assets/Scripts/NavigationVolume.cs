@@ -46,9 +46,16 @@ public class NavmeshTriangle
         edges = new List<Partition>();
     }
 }
-
+/// <summary>
+///  may need countour number
+///  may need hole number
+///  may make all point in other class have this member instead of pure point
+/// </summary>
 public class NavmeshPoint
 {
+    // contour number
+    // hole number 
+
     public Vector3 point;
     public List<NavmeshPoint> neighbors;
     public NavmeshPoint prec = null;
@@ -142,8 +149,6 @@ public class NavigationVolume : MonoBehaviour {
    
     private void Start()
     {
-        Debug.Log(Vector3.Angle(new Vector3(1, 0, 0), new Vector3(-1, 0, 0)));
-        Debug.Log(Vector3.Angle(new Vector3(0, 0, 1), new Vector3(1, 0, 0)));
         numRows = Mathf.CeilToInt(bounds.extents.z * 2 / gridSize);
         numCols = Mathf.CeilToInt(bounds.extents.x * 2 / gridSize);
         bounds.extents = new Vector3(numCols * gridSize / 2, bounds.extents.y, numRows * gridSize / 2);
@@ -326,6 +331,37 @@ public class NavigationVolume : MonoBehaviour {
         foreach(var a in rawAreas)
         {
             realAreas.AddRange(PurifyArea(a));
+        }
+         
+
+        // delete overlap points
+        foreach (var a in realAreas)
+        {
+            int i = 0;
+            while (i < a.contour.Count - 1)
+            {
+                int j = i + 1;
+
+                while (a.contour[i] == a.contour[j] && j < a.contour.Count)
+                {
+                    a.contour.RemoveAt(j);
+                }
+                i++;
+            }
+
+            foreach (var hole in a.holes)
+            {
+                i = 0;
+                while (i < hole.Count - 1)
+                {
+                    int j = i + 1;
+                    while (hole[i] == hole[j] && j < hole.Count)
+                    {
+                        hole.RemoveAt(j);
+                    }
+                    i++;
+                }
+            }
         }
 
         return realAreas;
@@ -1045,7 +1081,6 @@ public class NavigationVolume : MonoBehaviour {
                 }
                 if (shortestP != null)
                     a.partitions.Add(shortestP);
-                Debug.Log(shortestP);
             } while (shortestP != null);
 
             Debug.Log(string.Format("# Partitions : {0}", a.partitions.Count));
@@ -1191,6 +1226,8 @@ public class NavigationVolume : MonoBehaviour {
                     np1.neighbors.Add(np0);
                 }
             }
+
+            Debug.Log(string.Format("# Triangles : {0}", a.tris.Count));
         }
     }
 
@@ -1375,6 +1412,7 @@ public class NavigationVolume : MonoBehaviour {
 
     public void DoTestPathPointDeletion()
     {
+        int numberOfDeletion = 0;
         if (destedPoint != null && startedPoint != null)
         {
 
@@ -1425,12 +1463,105 @@ public class NavigationVolume : MonoBehaviour {
                     }
                 }
             }
+
+            bool firstNpOnContour = false;
+            bool lastNpOnContour = false;
+            int i = -1;
+            int j = -1;
+            for (int k = 0; k < currentArea.contour.Count; k ++)
+            {
+                if (currentArea.contour[k] == firstNp.point)
+                {
+                    i = k;
+                    firstNpOnContour = true;
+                }
+                if (currentArea.contour[k] == lastNp.point)
+                {
+                    j = k;
+                    lastNpOnContour = true;
+                }
+            }
+            if (firstNpOnContour && lastNpOnContour)
+            {
+                if (Math.Abs(i - j) <= 1)
+                    break;
+
+                Vector3 partiVec = currentArea.contour[i] - currentArea.contour[j];
+                Vector3 farVec = currentArea.contour[(j + 1) % currentArea.contour.Count] - currentArea.contour[j];
+                Vector3 closeVec = currentArea.contour[(j - 1) % currentArea.contour.Count] - currentArea.contour[j];
+
+                float angleJ = Vector3.Angle(farVec, closeVec);
+                if (Vector3.Cross(closeVec, farVec).y > 0f)
+                    angleJ = 360 - angleJ;
+                float angleI = Vector3.Angle(partiVec, closeVec);
+                if (Vector3.Cross(closeVec, partiVec).y > 0f)
+                    angleI = 360 - angleI;
+
+                if (angleI > angleJ)
+                {
+                    validPartition = false;
+                }
+            }
+            if (!firstNpOnContour && !lastNpOnContour)
+            {
+                int hit = 0;
+                foreach (var hole in currentArea.holes)
+                {
+                    // if point 0 and 2 on the same hole
+                    hit = 0;
+                    i = -1;
+                    j = -1;
+                    for (int k = 0; k < hole.Count; k++)
+                    {
+                        if (hole[k] == firstNp.point)
+                        {
+                            hit++;
+                            i = k;
+                        }
+                        if (hole[k] == lastNp.point)
+                        {
+                            hit++;
+                            j = k;
+                        }
+                        if (hit == 2)
+                            break;
+                    }
+                    if (hit == 2)
+                    {
+                        if (Math.Abs(i - j) <= 1)
+                            break;
+
+                        Vector3 partiVec = hole[i] - hole[j];
+                        Vector3 farVec = hole[(j + 1) % hole.Count] - hole[j];
+                        Vector3 closeVec = hole[(j - 1) % hole.Count] - hole[j];
+
+                        float angleJ = Vector3.Angle(farVec, closeVec);
+                        if (Vector3.Cross(closeVec, farVec).y > 0f)
+                            angleJ = 360 - angleJ;
+                        float angleI = Vector3.Angle(partiVec, closeVec);
+                        if (Vector3.Cross(closeVec, partiVec).y > 0f)
+                            angleI = 360 - angleI;
+
+                        if (angleI < angleJ)
+                        {
+                            validPartition = false;
+                        }
+                        break;
+                    }
+                    if (hit == 1)
+                    {
+                        break;
+                    }
+                }
+            }
+
             if (validPartition)
             {
                 firstNp.prec = lastNp;
                 middleNp.prec = null;
                 middleNp = lastNp;
                 lastNp = lastNp.prec;
+                numberOfDeletion++;
             }
             else
             {
@@ -1439,6 +1570,8 @@ public class NavigationVolume : MonoBehaviour {
                 lastNp = lastNp.prec;
             }
         }
+
+        Debug.Log(string.Format("# NumberOfDeletion : {0}", numberOfDeletion));
     }
 
     private bool IsPointInTriangle(Vector3 point_raw, NavmeshTriangle tri)
@@ -1498,7 +1631,7 @@ public class NavigationVolume : MonoBehaviour {
     private void OnDrawGizmos()
     {
 
-        // Draw walkable grids
+        //Draw walkable grids
         //Gizmos.color = Color.yellow;
         //for (int i = 0; i < numRows; i++)
         //{
@@ -1557,7 +1690,7 @@ public class NavigationVolume : MonoBehaviour {
         //}
 
 
-        if(areas != null)
+        if (areas != null)
         {
             foreach (var a in areas)
             {
@@ -1582,6 +1715,8 @@ public class NavigationVolume : MonoBehaviour {
                     Gizmos.color = Color.magenta;
                     for (int i = 1; i < hole.Count - 1; i++)
                     {
+                        if (hole[i] == hole[i + 1])
+                            Gizmos.DrawSphere(hole[i], 0.1f);
                         Gizmos.DrawLine(hole[i], hole[i + 1]);
                     }
                     Gizmos.color = new Color(0f, 0f, 1f);
@@ -1589,8 +1724,6 @@ public class NavigationVolume : MonoBehaviour {
                     Gizmos.DrawLine(hole[hole.Count - 1], hole[0]);
                 }
 
-
-             
                 foreach (var p in a.partitions)
                 {
                     Gizmos.color = Color.yellow;
@@ -1647,6 +1780,7 @@ public class NavigationVolume : MonoBehaviour {
                         Gizmos.DrawLine(currentNp.point, currentNp.prec.point);
                         currentNp = currentNp.prec;
                     }
+                    Gizmos.DrawWireSphere(startedPoint.point, 0.2f);
                 }
             }
         }
