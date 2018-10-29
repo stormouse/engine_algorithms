@@ -29,9 +29,9 @@ public class Partition
     {
         return Vector3.Distance(points[0], points[1]);
     }
-    public Partition ()
+    public Partition (Vector3 point0, Vector3 point1)
     {
-        points = new List<Vector3>();
+        points = new List<Vector3> {point0, point1};
         tris = new List<NavmeshTriangle>();
     }
 }
@@ -868,9 +868,7 @@ public class NavigationVolume : MonoBehaviour {
                     for (int j = i + 2; j < a.contour.Count; j++)
                     {
                         // intersect test
-                        Partition p = new Partition();
-                        p.points.Add(a.contour[i]);
-                        p.points.Add(a.contour[j]);
+                        Partition p = new Partition(a.contour[i],a.contour[j]);
 
                         bool intersect = false;
 
@@ -920,9 +918,7 @@ public class NavigationVolume : MonoBehaviour {
                         for (int j = 0; j < hole.Count; j++)
                         {
                             // intersect test
-                            Partition p = new Partition();
-                            p.points.Add(a.contour[i]);
-                            p.points.Add(hole[j]);
+                            Partition p = new Partition(a.contour[i], hole[j]);
 
                             bool intersect = false;
 
@@ -959,9 +955,7 @@ public class NavigationVolume : MonoBehaviour {
                         for (int j = i + 2; j < a.holes[t].Count; j++)
                         {
                             // intersect test
-                            Partition p = new Partition();
-                            p.points.Add(a.holes[t][i]);
-                            p.points.Add(a.holes[t][j]);
+                            Partition p = new Partition(a.holes[t][i],a.holes[t][j]);
 
                             bool intersect = false;
 
@@ -1017,9 +1011,7 @@ public class NavigationVolume : MonoBehaviour {
                             {
                                 for (int j = 0; j < a.holes[s].Count; j++)
                                 {
-                                    Partition p = new Partition();
-                                    p.points.Add(a.holes[t][i]);
-                                    p.points.Add(a.holes[s][j]);
+                                    Partition p = new Partition(a.holes[t][i], a.holes[s][j]);
 
                                     bool intersect = false;
 
@@ -1111,9 +1103,7 @@ public class NavigationVolume : MonoBehaviour {
             List<Partition> edges = new List<Partition>();
             for (int i = 0; i < a.contour.Count; i ++)
             {
-                Partition p = new Partition();
-                p.points.Add(a.contour[i]);
-                p.points.Add(a.contour[(i + 1) % a.contour.Count]);
+                Partition p = new Partition(a.contour[i], a.contour[(i + 1) % a.contour.Count]);
                 edges.Add(p);
             }
 
@@ -1121,9 +1111,7 @@ public class NavigationVolume : MonoBehaviour {
             {
                 for (int i = 0; i < hole.Count; i ++)
                 {
-                    Partition p = new Partition();
-                    p.points.Add(hole[i]);
-                    p.points.Add(hole[(i + 1) % hole.Count]);
+                    Partition p = new Partition(hole[i], hole[(i + 1) % hole.Count]);
                     edges.Add(p);
                 }
             }
@@ -1247,14 +1235,18 @@ public class NavigationVolume : MonoBehaviour {
 
     public void DoTestPathFinding()
     {
+        RemovePointFromVolume(startedPoint);
+        RemovePointFromVolume(destedPoint);
+        startedPoint = null;
+        destedPoint = null;
+
         Vector3 startPoint_raw = CoordToVector(player.transform.position.x, player.transform.position.z);
         Vector3 destPoint_raw = CoordToVector(dest.transform.position.x, dest.transform.position.z);
 
         NavmeshPoint startPoint = null;
         NavmeshPoint destPoint = null;
-        RemovePointFromVolume(startedPoint);
+        
         startPoint = new NavmeshPoint(startPoint_raw);
-        RemovePointFromVolume(destedPoint);
         destPoint = new NavmeshPoint(destPoint_raw);
       
         // test if in the same area
@@ -1373,12 +1365,81 @@ public class NavigationVolume : MonoBehaviour {
             if (destPoint.prec != null)
                 break;
         }
+
         startedPoint = startPoint;
         destedPoint = destPoint;
+        currentArea.points.Add(startedPoint);
+        currentArea.points.Add(destedPoint);
         // player start moving
     }
 
+    public void DoTestPathPointDeletion()
+    {
+        if (destedPoint != null && startedPoint != null)
+        {
 
+        }
+        else
+        {
+            return;
+        }
+
+        NavmeshArea currentArea = null;
+        foreach (var a in areas)
+        {
+            foreach (var np in a.points)
+            {
+                if (np == startedPoint)
+                {
+                    currentArea = a;
+                    break;
+                }
+            }
+            if (currentArea != null)
+                break;
+        }
+
+
+        NavmeshPoint firstNp = destedPoint;
+        NavmeshPoint middleNp = destedPoint.prec;
+        NavmeshPoint lastNp = destedPoint.prec.prec;
+
+        while (lastNp != null)
+        {
+            // test if can delete middle np;
+
+            Partition p = new Partition(firstNp.point, lastNp.point);
+            bool validPartition = true;
+            if (IsIntersectWithContourEdges(p, currentArea.contour))
+            {
+                validPartition = false;
+            }
+            else
+            {
+                foreach (var hole in currentArea.holes)
+                {
+                    if (IsIntersectWithContourEdges(p, hole))
+                    {
+                        validPartition = false;
+                        break;
+                    }
+                }
+            }
+            if (validPartition)
+            {
+                firstNp.prec = lastNp;
+                middleNp.prec = null;
+                middleNp = lastNp;
+                lastNp = lastNp.prec;
+            }
+            else
+            {
+                firstNp = middleNp;
+                middleNp = lastNp;
+                lastNp = lastNp.prec;
+            }
+        }
+    }
 
     private bool IsPointInTriangle(Vector3 point_raw, NavmeshTriangle tri)
     {
