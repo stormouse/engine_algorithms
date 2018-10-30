@@ -1427,8 +1427,10 @@ public class NavigationVolume : MonoBehaviour {
             np.h = NavmeshPoint.Disdance(np, destPoint);
             np.open = false;
             np.prec = null;
+            np.g = float.MaxValue;
         }
         startPoint.g = 0;
+        startPoint.h = NavmeshPoint.Disdance(startPoint, destPoint);
         startPoint.open = true;
         destPoint.h = 0;
         // no priority queue in c#?
