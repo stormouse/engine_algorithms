@@ -275,10 +275,10 @@ public class NavigationVolume : MonoBehaviour {
         int i2 = contour.Count / 2;
         int i3 = contour.Count * 3 / 4;
         int i4 = contour.Count - 1;
-        var p1 = SimplifyContourRecursive(contour, i0, i1, threshold);
-        var p2 = SimplifyContourRecursive(contour, i1, i2, threshold);
-        var p3 = SimplifyContourRecursive(contour, i2, i3, threshold);
-        var p4 = SimplifyContourRecursive(contour, i3, i4, threshold);
+        var p1 = SimplifyContourRecursive(contour, i0, i1, threshold, 3.0f);
+        var p2 = SimplifyContourRecursive(contour, i1, i2, threshold, 3.0f);
+        var p3 = SimplifyContourRecursive(contour, i2, i3, threshold, 3.0f);
+        var p4 = SimplifyContourRecursive(contour, i3, i4, threshold, 3.0f);
 
         // contour.Clear();
         List<Vector3> simplified = new List<Vector3>();
@@ -290,12 +290,25 @@ public class NavigationVolume : MonoBehaviour {
         foreach (var p in p3) simplified.Add(contour[p]);
         simplified.Add(contour[i3]);
         foreach (var p in p4) simplified.Add(contour[p]);
-        // simplified.Add(contour[i4]);
 
-        return simplified;
+        // remove duplicates
+        bool[] dropVertex = new bool[simplified.Count];
+        for(int i = 0; i < simplified.Count; i++)
+        {
+            int j = (i + 1) % simplified.Count;
+            if (Vector3.SqrMagnitude(simplified[i] - simplified[j]) < 0.01f)
+                dropVertex[i] = true;
+        }
+        
+        List<Vector3> simplifiedCorrection = new List<Vector3>();
+        for(int i = 0; i < simplified.Count; i++)
+            if (!dropVertex[i])
+                simplifiedCorrection.Add(simplified[i]);
+        
+        return simplifiedCorrection;
     }
 
-    private List<int> SimplifyContourRecursive(List<Vector3> contour, int s, int t, float threshold)
+    private List<int> SimplifyContourRecursive(List<Vector3> contour, int s, int t, float lowerThreshold, float upperThreshold)
     {
         List<int> anchor = new List<int>();
         float maxDistance = 0.0f;
@@ -303,7 +316,7 @@ public class NavigationVolume : MonoBehaviour {
         for(int i = s + 1; i < t; i++)
         {
             float distance = DistanceToSegment(contour[i], contour[s], contour[t]);
-            if (distance < threshold) continue;
+            if (distance < lowerThreshold) continue;
             if(maxIndex == -1 || maxDistance < distance)
             {
                 maxDistance = distance;
@@ -313,10 +326,34 @@ public class NavigationVolume : MonoBehaviour {
         if (maxIndex == -1) return anchor;
         else
         {
-            var pre = SimplifyContourRecursive(contour, s, maxIndex, threshold);
-            var post = SimplifyContourRecursive(contour, maxIndex, t, threshold);
+            var pre = SimplifyContourRecursive(contour, s, maxIndex, lowerThreshold, upperThreshold);
+            var post = SimplifyContourRecursive(contour, maxIndex, t, lowerThreshold, upperThreshold);
             foreach (var element in pre) anchor.Add(element);
+            if (pre.Count > 0)
+            {
+                int idx = anchor[anchor.Count - 1];
+                Vector3 lastVertBeforeNew = contour[idx];
+                while(Vector3.SqrMagnitude(contour[maxIndex] - lastVertBeforeNew) > upperThreshold * upperThreshold)
+                {
+                    idx = (idx + maxIndex) / 2;
+                    if (maxIndex - idx < 2) break;
+                    lastVertBeforeNew = contour[idx];
+                    anchor.Add(idx);
+                }
+            }
             anchor.Add(maxIndex);
+            if(post.Count > 0)
+            {
+                int idx = maxIndex;
+                Vector3 lastVertAfterNew = contour[idx];
+                while(Vector3.SqrMagnitude(contour[post[0]] - lastVertAfterNew) > upperThreshold * upperThreshold)
+                {
+                    idx = (idx + post[0]) / 2;
+                    if (post[0] - maxIndex < 2) break;
+                    lastVertAfterNew = contour[idx];
+                    anchor.Add(idx);
+                }
+            }
             foreach (var element in post) anchor.Add(element);
         }
         return anchor;
@@ -332,39 +369,58 @@ public class NavigationVolume : MonoBehaviour {
         {
             realAreas.AddRange(PurifyArea(a));
         }
-         
 
-        // delete overlap points
-        foreach (var a in realAreas)
+        //// delete overlap points
+        //foreach (var a in realAreas)
+        //{
+        //    int i = 0;
+        //    while (i < a.contour.Count - 1)
+        //    {
+        //        int j = i + 1;
+        //        while (a.contour[i] == a.contour[j] && j < a.contour.Count)
+        //        {
+        //            a.contour.RemoveAt(j);
+        //        }
+        //        i++;
+        //    }
+
+        //    foreach (var hole in a.holes)
+        //    {
+        //        i = 0;
+        //        while (i < hole.Count - 1)
+        //        {
+        //            int j = i + 1;
+        //            while (hole[i] == hole[j] && j < hole.Count)
+        //            {
+        //                hole.RemoveAt(j);
+        //            }
+        //            i++;
+        //        }
+        //    }
+        //}
+
+        return realAreas;
+    }
+
+    private List<Vector3> RemoveDuplicate(List<Vector3> raw)
+    {
+        List<Vector3> result = new List<Vector3>();
+        bool[] dropVertex = new bool[raw.Count];
+        for(int i = 0; i < raw.Count; i++)
         {
-            int i = 0;
-            while (i < a.contour.Count - 1)
+            int j = (i + 1) % raw.Count;
+            if(Vector3.SqrMagnitude(raw[i] - raw[j]) < 0.01f)
             {
-                int j = i + 1;
-
-                while (a.contour[i] == a.contour[j] && j < a.contour.Count)
-                {
-                    a.contour.RemoveAt(j);
-                }
-                i++;
-            }
-
-            foreach (var hole in a.holes)
-            {
-                i = 0;
-                while (i < hole.Count - 1)
-                {
-                    int j = i + 1;
-                    while (hole[i] == hole[j] && j < hole.Count)
-                    {
-                        hole.RemoveAt(j);
-                    }
-                    i++;
-                }
+                dropVertex[j] = true;
             }
         }
 
-        return realAreas;
+        for(int i = 0; i < raw.Count; i++)
+        {
+            if (!dropVertex[i]) result.Add(raw[i]);
+        }
+
+        return result;
     }
 
     private List<NavmeshArea> PurifyArea(NavmeshArea area)
@@ -387,7 +443,12 @@ public class NavigationVolume : MonoBehaviour {
                 if (PolygonSubtract(contours[i], holes[j], out tmp))
                 {
                     contours.RemoveAt(i--);
-                    foreach (var tmpList in tmp) contours.Add(tmpList);
+                    foreach (var tmpList in tmp)
+                    {
+                        var simplified = RemoveDuplicate(tmpList);
+                        if(simplified.Count > 3)
+                        contours.Add(simplified);
+                    }
                     shouldRemove[j] = true; // the hole cut through the contour, not a hole anymore
                     if (i < 0) break;
                 } // else nothing changed
@@ -397,12 +458,12 @@ public class NavigationVolume : MonoBehaviour {
         foreach (var c in contours)
         {
             NavmeshArea a = new NavmeshArea();
-            a.contour = c;
+            a.contour = RemoveDuplicate(c);
             for (int i = 0; i < holes.Count; i++)
             {
                 if (!shouldRemove[i] && GetInsideness(holes[i][0], c))
                 {
-                    a.holes.Add(holes[i]);
+                    a.holes.Add(RemoveDuplicate(holes[i]));
                 }
             }
             result.Add(a);
@@ -471,11 +532,8 @@ public class NavigationVolume : MonoBehaviour {
         int i = n - 1;
         while(i > 0)
         {
-            int innerCount = 0;
             for(int j = i - 1; j >= 0; j--)
             {
-                innerCount++;
-                if (innerCount > 100) throw new Exception("innerCount > 100");
                 List<Vector3> newPolygon;
                 if(PolygonUnion(polygons[j], polygons[i], out newPolygon))
                 {
@@ -485,7 +543,6 @@ public class NavigationVolume : MonoBehaviour {
                 }
             }
             i--;
-            if (i < 0) throw new Exception("i < 0");
         }
     }
 
@@ -565,6 +622,7 @@ public class NavigationVolume : MonoBehaviour {
         {
             int i1 = (i + 1) % contour.Count;
             var n = Vector3.Cross(up, contour[i1] - contour[i]).normalized;
+            var d = (contour[i1] - contour[i]).normalized;
             if (head == null)
             {
                 head = new VertexNode(contour[i] + n * r);
@@ -689,6 +747,7 @@ public class NavigationVolume : MonoBehaviour {
 
     private List<VertexWANode> GetWAIntersections(VertexWANode contourHead, VertexWANode clipperHead, bool headInside)
     {
+        int debugLoopCount = 0;
         List<VertexWANode> intersections = new List<VertexWANode>();
         var p = contourHead;
         do
@@ -702,6 +761,11 @@ public class NavigationVolume : MonoBehaviour {
                     Vector3 t;
                     if (SegmentIntersection(p.Vertex, pnext.Vertex, q.Vertex, qnext.Vertex, out t))
                     {
+                        debugLoopCount++;
+                        if (debugLoopCount > 1000)
+                        {
+                            int breakpoint = 1;
+                        }
                         if (OnSegment(ref p.Vertex, ref t, ref pnext.Vertex) && OnSegment(ref q.Vertex, ref t, ref qnext.Vertex))
                         {
                             t.y = 1;
@@ -831,7 +895,7 @@ public class NavigationVolume : MonoBehaviour {
                             q = q.ClipperNext;
                     }
                     else { q = q.Next; }
-                } while (q != it);
+                } while (q != it && !visited.Contains(q.Id));
                 result.Add(polygon);
             }
         }
@@ -1344,12 +1408,13 @@ public class NavigationVolume : MonoBehaviour {
             np.neighbors.Add(destPoint);
             destPoint.neighbors.Add(np);
         }
-        // in same triangle
-        if (startTri == destTri)
-        {
-            startPoint.neighbors.Add(destPoint);
-            destPoint.neighbors.Add(startPoint);
-        }
+
+        //// in same triangle
+        //if (startTri == destTri)
+        //{
+        //    startPoint.neighbors.Add(destPoint);
+        //    destPoint.neighbors.Add(startPoint);
+        //}
 
         // reset
         foreach (var np in currentArea.points)
@@ -1695,10 +1760,8 @@ public class NavigationVolume : MonoBehaviour {
             foreach (var a in areas)
             {
                 {
-                    Gizmos.color = new Color(1f, 0f, 0f);
-                    Gizmos.DrawLine(a.contour[0], a.contour[1]);
                     Gizmos.color = new Color(0.5f, 0.8f, 0.8f);
-                    for (int i = 1; i < a.contour.Count - 1; i++)
+                    for (int i = 0; i < a.contour.Count - 1; i++)
                     {
                         if (a.contour[i] == a.contour[i + 1])
                             Gizmos.DrawSphere(a.contour[i], 0.1f);
@@ -1706,22 +1769,24 @@ public class NavigationVolume : MonoBehaviour {
                     }
                     Gizmos.color = new Color(0f, 0f, 1f);
                     Gizmos.DrawLine(a.contour[a.contour.Count - 1], a.contour[0]);
+                    if (a.contour[a.contour.Count - 1] == a.contour[0])
+                        Gizmos.DrawSphere(a.contour[0], 0.1f);
                 }
 
                 foreach (var hole in a.holes)
                 {
-                    Gizmos.color = new Color(1f, 0f, 0f);
-                    Gizmos.DrawLine(hole[0], hole[1]);
+                    
                     Gizmos.color = Color.magenta;
-                    for (int i = 1; i < hole.Count - 1; i++)
+                    for (int i = 0; i < hole.Count - 1; i++)
                     {
                         if (hole[i] == hole[i + 1])
                             Gizmos.DrawSphere(hole[i], 0.1f);
                         Gizmos.DrawLine(hole[i], hole[i + 1]);
                     }
                     Gizmos.color = new Color(0f, 0f, 1f);
-
                     Gizmos.DrawLine(hole[hole.Count - 1], hole[0]);
+                    if (hole[hole.Count - 1] == hole[0])
+                        Gizmos.DrawSphere(hole[0], 0.1f);
                 }
 
                 foreach (var p in a.partitions)
