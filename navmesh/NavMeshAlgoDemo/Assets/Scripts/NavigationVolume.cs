@@ -995,7 +995,12 @@ public class NavigationVolume : MonoBehaviour {
                         {
                             Vector3 partiVec = a.contour[i] - a.contour[j];
                             Vector3 farVec = a.contour[(j + 1) % a.contour.Count] - a.contour[j];
-                            Vector3 closeVec = a.contour[(j - 1) % a.contour.Count] - a.contour[j];
+                            int prev = j - 1;
+                            if (j == 0)
+                            {
+                                prev = a.contour.Count - 1;
+                            }
+                            Vector3 closeVec = a.contour[prev] - a.contour[j];
 
                             float angleJ = Vector3.Angle(farVec, closeVec);
                             if (Vector3.Cross(closeVec, farVec).y > 0f)
@@ -1598,7 +1603,12 @@ public class NavigationVolume : MonoBehaviour {
 
                         Vector3 partiVec = hole[i] - hole[j];
                         Vector3 farVec = hole[(j + 1) % hole.Count] - hole[j];
-                        Vector3 closeVec = hole[(j - 1) % hole.Count] - hole[j];
+                        int prev = j - 1;
+                        if (j == 0)
+                        {
+                            prev = hole.Count - 1;
+                        }
+                        Vector3 closeVec = hole[prev] - hole[j];
 
                         float angleJ = Vector3.Angle(farVec, closeVec);
                         if (Vector3.Cross(closeVec, farVec).y > 0f)
