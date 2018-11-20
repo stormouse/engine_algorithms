@@ -329,31 +329,31 @@ public class NavigationVolume : MonoBehaviour {
             var pre = SimplifyContourRecursive(contour, s, maxIndex, lowerThreshold, upperThreshold);
             var post = SimplifyContourRecursive(contour, maxIndex, t, lowerThreshold, upperThreshold);
             foreach (var element in pre) anchor.Add(element);
-            if (pre.Count > 0)
-            {
-                int idx = anchor[anchor.Count - 1];
-                Vector3 lastVertBeforeNew = contour[idx];
-                while(Vector3.SqrMagnitude(contour[maxIndex] - lastVertBeforeNew) > upperThreshold * upperThreshold)
-                {
-                    idx = (idx + maxIndex) / 2;
-                    if (maxIndex - idx < 2) break;
-                    lastVertBeforeNew = contour[idx];
-                    anchor.Add(idx);
-                }
-            }
+            //if (pre.Count > 0)
+            //{
+            //    int idx = anchor[anchor.Count - 1];
+            //    Vector3 lastVertBeforeNew = contour[idx];
+            //    while(Vector3.SqrMagnitude(contour[maxIndex] - lastVertBeforeNew) > upperThreshold * upperThreshold)
+            //    {
+            //        idx = (idx + maxIndex) / 2;
+            //        if (maxIndex - idx < 2) break;
+            //        lastVertBeforeNew = contour[idx];
+            //        anchor.Add(idx);
+            //    }
+            //}
             anchor.Add(maxIndex);
-            if(post.Count > 0)
-            {
-                int idx = maxIndex;
-                Vector3 lastVertAfterNew = contour[idx];
-                while(Vector3.SqrMagnitude(contour[post[0]] - lastVertAfterNew) > upperThreshold * upperThreshold)
-                {
-                    idx = (idx + post[0]) / 2;
-                    if (post[0] - maxIndex < 2) break;
-                    lastVertAfterNew = contour[idx];
-                    anchor.Add(idx);
-                }
-            }
+            //if(post.Count > 0)
+            //{
+            //    int idx = maxIndex;
+            //    Vector3 lastVertAfterNew = contour[idx];
+            //    while(Vector3.SqrMagnitude(contour[post[0]] - lastVertAfterNew) > upperThreshold * upperThreshold)
+            //    {
+            //        idx = (idx + post[0]) / 2;
+            //        if (post[0] - maxIndex < 2) break;
+            //        lastVertAfterNew = contour[idx];
+            //        anchor.Add(idx);
+            //    }
+            //}
             foreach (var element in post) anchor.Add(element);
         }
         return anchor;
@@ -1409,12 +1409,12 @@ public class NavigationVolume : MonoBehaviour {
             destPoint.neighbors.Add(np);
         }
 
-        //// in same triangle
-        //if (startTri == destTri)
-        //{
-        //    startPoint.neighbors.Add(destPoint);
-        //    destPoint.neighbors.Add(startPoint);
-        //}
+        // in same triangle
+        if (startTri == destTri)
+        {
+            startPoint.neighbors.Add(destPoint);
+            destPoint.neighbors.Add(startPoint);
+        }
 
         // reset
         foreach (var np in currentArea.points)
