@@ -14,6 +14,7 @@ public:
 
 	void Render(sf::RenderWindow& window);
 
+	void Step();
 
 private:
 

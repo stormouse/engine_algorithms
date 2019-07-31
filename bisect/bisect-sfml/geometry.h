@@ -18,7 +18,7 @@ static bool ray_intersection(float2 p, float2 dir, float2 p0, float2 p1, float2&
 	float2 v3(-dir.y, dir.x);
 
 	float dot = linalg::dot(v2, v3);
-	if (abs(dot) < 0.000001)
+	if (abs(dot) < 0.000001f)
 		return false;
 
 	float t1 = cross2d(v2, v1) / dot;

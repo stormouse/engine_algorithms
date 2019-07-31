@@ -2,6 +2,8 @@
 #include "geometry.h"
 #include <assert.h>
 
+#include <iostream>
+
 
 Polygon::Polygon() {}
 
@@ -20,13 +22,16 @@ std::vector<Polygon> Polygon::BisectInternal(int index, float2 p, float2 dir)
 
 	float2 intersection;
 
-	for (int i = 1; i < n - 1; i++)
+	bool found_intersection = false;
+
+	for (int i = 1; i < n; i++)
 	{
 		if (ray_intersection(p, dir,
-			this->vertices[(index + i) % this->vertices.size()],
-			this->vertices[(index + i + 1) % this->vertices.size()],
+			this->vertices[(index + i) % n],
+			this->vertices[(index + i + 1) % n],
 			intersection))
 		{
+			found_intersection = true;
 			Polygon p1;
 			p1.vertices.push_back(this->vertices[index]);
 			p1.vertices.push_back(p);
